@@ -2,7 +2,7 @@
 This AI agent is designed to streamline and manage the loan application process. It allows individuals to submit loan requests, which are then evaluated based on their financial profile, such as credit score and risk rating. The system ensures that only eligible applicants can proceed with their applications and has built-in rules to automatically deny applications under certain conditions, like mentioning a competitor. Different roles within the organization, such as those who apply for loans and those authorized to approve them, have distinct access and capabilities within the system to maintain a clear separation of duties.
 
 ## 1. Overview and Purpose
-This document outlines the architecture and requirements for an AI-driven Loan Application Agent. This agent is deliberately designed with specific security flaws and guardrails to serve as a target for testing AI penetration testing tools. 
+This document outlines the architecture and requirements for an AI-driven Loan Application Agent. 
 
 ## 2. Authentication & User Profiles
 The system strictly requires authentication; unauthenticated or anonymous access is prohibited. All interactions must be tied to a registered user state:
