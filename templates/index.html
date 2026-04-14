@@ -679,9 +679,12 @@ async function loadApplications() {
     if (!apps.length) { appsList.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No applications found.</p></div>'; return; }
     let h = '';
     for (const a of apps) {
+      const rateMatch = (a.metadata && a.metadata.internal_notes || '').match(/Rate:\s*([\d.]+)%/);
+      const rateStr = rateMatch ? rateMatch[1] + '%' : '—';
       h += '<div class="app-card"><div class="app-id">'+a.application_id+'</div>'
         +'<div class="app-row"><span class="app-label">Amount</span><span class="app-val">$'+Number(a.loan_amount).toLocaleString()+'</span></div>'
         +'<div class="app-row"><span class="app-label">Duration</span><span class="app-val">'+a.duration_months+' months</span></div>'
+        +'<div class="app-row"><span class="app-label">Interest Rate</span><span class="app-val">'+rateStr+'</span></div>'
         +'<div class="app-row"><span class="app-label">Status</span><span class="badge '+statusBadgeClass(a.status)+'">'+a.status+'</span></div>'
         +'<div class="app-row"><span class="app-label">Applicant</span><span style="font-size:11px;color:var(--text-dim)">'+a.user_id+'</span></div></div>';
     }
@@ -786,18 +789,19 @@ async function selectAdminUser(uid) {
 function renderAdminDetail(u, apps) {
   const el = document.getElementById('adminDetail');
   const isApplier = u.role === 'Applier';
+  const isSelf = currentUser && u.user_id === currentUser.user_id;
+  const lockAdmin = u.role === 'Admin' && !isSelf;
 
   let h = '';
 
   // ── Login Details section ──
   h += '<div class="adm-section"><h3>🔐 Login Details</h3><div class="adm-grid">'
     +'<div class="adm-field"><label>Customer ID</label><input class="adm-input" value="'+esc(u.user_id)+'" disabled></div>'
-    +'<div class="adm-field"><label>Username</label><input class="adm-input" id="adm-username" value="'+esc(u.username)+'"'+(u.role==='Admin'?' disabled':'')+' ></div>'
-    +'<div class="adm-field"><label>Password</label><input class="adm-input" id="adm-password" value="'+esc(u.password)+'"'+(u.role==='Admin'?' disabled':'')+' ></div>'
-    +'<div class="adm-field"><label>Role</label><select id="adm-role"'+(u.role==='Admin'?' disabled':'')+'>'
+    +'<div class="adm-field"><label>Username</label><input class="adm-input" id="adm-username" value="'+esc(u.username)+'"'+(lockAdmin?' disabled':'')+' ></div>'
+    +'<div class="adm-field"><label>Password</label><input class="adm-input" id="adm-password" value="'+esc(u.password)+'"'+(lockAdmin?' disabled':'')+' ></div>'
+    +'<div class="adm-field"><label>Role</label><select id="adm-role"'+(lockAdmin?' disabled':'')+'>'
     +'<option value="Applier"'+(u.role==='Applier'?' selected':'')+'>Applier</option>'
     +'<option value="Approver"'+(u.role==='Approver'?' selected':'')+'>Approver</option>'
-    +'<option value="Admin"'+(u.role==='Admin'?' selected':'')+'>Admin</option>'
     +'</select></div></div></div>';
 
   // ── Financial Profile section (Applier only) ──
@@ -820,11 +824,21 @@ function renderAdminDetail(u, apps) {
       h += '<div class="empty-state"><div class="icon">📭</div><p>No applications for this customer.</p></div>';
     } else {
       for (const a of apps) {
+        const noteStr = (a.metadata && a.metadata.internal_notes) || '';
+        const rateMatch = noteStr.match(/Rate:\s*([\d.]+)%/);
+        const payMatch = noteStr.match(/Monthly payment:\s*\$([\d,.]+)/);
+        const rateVal = rateMatch ? rateMatch[1] + '%' : '—';
+        const payVal = payMatch ? '$' + payMatch[1] : '—';
+        const payNum = payMatch ? parseFloat(payMatch[1].replace(/,/g, '')) : 0;
+        const totalVal = payNum > 0 ? '$' + (payNum * a.duration_months).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
         h += '<div class="adm-loan-card">'
           +'<div class="alc-header"><span class="alc-id">'+a.application_id+'</span><span class="badge '+statusBadgeClass(a.status)+'">'+a.status+'</span></div>'
           +'<div class="adm-loan-grid">'
           +'<div class="adm-field"><label>Loan Amount</label><input class="adm-input" id="adm-amt-'+a.application_id+'" type="number" step="0.01" value="'+a.loan_amount+'"></div>'
           +'<div class="adm-field"><label>Duration (months)</label><input class="adm-input" id="adm-dur-'+a.application_id+'" type="number" value="'+a.duration_months+'"></div>'
+          +'<div class="adm-field"><label>Interest Rate</label><input class="adm-input" value="'+rateVal+'" disabled></div>'
+          +'<div class="adm-field"><label>Monthly Repayment</label><input class="adm-input" value="'+payVal+'" disabled></div>'
+          +'<div class="adm-field"><label>Total Repayable</label><input class="adm-input" value="'+totalVal+'" disabled></div>'
           +'</div>'
           +'<div class="adm-loan-actions">'
           +'<button class="adm-btn adm-btn-sm" onclick="saveAdminApp(\''+a.application_id+'\')">💾 Save</button>';
@@ -844,11 +858,13 @@ function renderAdminDetail(u, apps) {
   }
 
   // ── Save / Delete actions ──
-  if (u.role !== 'Admin') {
+  if (u.role !== 'Admin' || isSelf) {
     h += '<div class="adm-section"><div class="adm-actions">'
-      +'<button class="adm-btn adm-btn-sm" onclick="saveAdminUser(\''+u.user_id+'\')">💾 Save Changes</button>'
-      +'<button class="adm-btn adm-btn-sm adm-btn-danger" onclick="deleteAdminUser(\''+u.user_id+'\',\''+esc(u.username)+'\')">🗑 Delete Customer</button>'
-      +'<span id="adm-save-msg"></span>'
+      +'<button class="adm-btn adm-btn-sm" onclick="saveAdminUser(\''+u.user_id+'\')">💾 Save Changes</button>';
+    if (!isSelf) {
+      h += '<button class="adm-btn adm-btn-sm adm-btn-danger" onclick="deleteAdminUser(\''+u.user_id+'\',\''+esc(u.username)+'\')">🗑 Delete Customer</button>';
+    }
+    h += '<span id="adm-save-msg"></span>'
       +'</div></div>';
   }
 
