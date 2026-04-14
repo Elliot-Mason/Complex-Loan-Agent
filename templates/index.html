@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoanAgent — AI Loan Application System</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0b0b0f;
+  --panel: #121217;
+  --panel-alt: #18181e;
+  --accent: #fa2a55;
+  --accent-hover: #e0153f;
+  --success: #2be3a7;
+  --danger: #fa2a55;
+  --warning: #ffbd2e;
+  --purple: #c651fa;
+  --text: #eaecf0;
+  --text-dim: #a0a3ad;
+  --text-muted: #4e515c;
+  --border: #2a2a35;
+  --bubble-user: #2a1020;
+  --bubble-agent: #1c1c25;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(250,42,85,0.12);
+}
+
+[data-theme="light"] {
+  --bg: #f1f5f9;
+  --panel: #ffffff;
+  --panel-alt: #f8fafc;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --success: #059669;
+  --danger: #dc2626;
+  --warning: #d97706;
+  --purple: #7c3aed;
+  --text: #0f172a;
+  --text-dim: #475569;
+  --text-muted: #94a3b8;
+  --border: #e2e8f0;
+  --bubble-user: #dbeafe;
+  --bubble-agent: #f1f5f9;
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+
+/* Theme toggle */
+.theme-toggle {
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-dim); font-size: 16px; width: 32px; height: 32px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--text); }
+
+html, body { height: 100%; overflow: hidden; }
+body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); }
+
+/* ===== Login Screen ===== */
+.login-screen {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--bg); z-index: 1000; transition: opacity 0.3s, visibility 0.3s;
+}
+.login-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.login-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  padding: 48px 40px 40px; width: 420px; max-width: 90vw;
+  box-shadow: 0 8px 48px rgba(0,0,0,0.5); text-align: center;
+}
+.login-card .logo { font-size: 48px; margin-bottom: 8px; }
+.login-card h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+.login-card .subtitle { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 32px; }
+.login-field { margin-bottom: 16px; text-align: left; }
+.login-field label { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 6px; }
+.login-field input, .adm-input {
+  width: 100%; padding: 10px 14px; background: var(--panel-alt); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s;
+}
+.login-field input:focus, .adm-input:focus { border-color: var(--accent); }
+.login-field input::placeholder, .adm-input::placeholder { color: var(--text-muted); }
+.login-btn, .adm-btn {
+  padding: 10px 20px; background: var(--accent); border: none; border-radius: var(--radius-sm);
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s;
+}
+.login-btn { width: 100%; margin-top: 8px; }
+.login-btn:hover, .adm-btn:hover { background: var(--accent-hover); }
+.login-btn:disabled, .adm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-error-msg { color: var(--danger); font-size: 13px; margin-top: 12px; min-height: 20px; }
+
+/* Badges */
+.badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.badge-applier { background: rgba(59,130,246,0.2); color: var(--accent); }
+.badge-approver { background: rgba(139,92,246,0.2); color: var(--purple); }
+.badge-admin { background: rgba(239,68,68,0.2); color: var(--danger); }
+.badge-low { background: rgba(16,185,129,0.2); color: var(--success); }
+.badge-medium { background: rgba(245,158,11,0.2); color: var(--warning); }
+.badge-high { background: rgba(239,68,68,0.2); color: var(--danger); }
+.badge-pending { background: rgba(245,158,11,0.15); color: var(--warning); }
+.badge-approved { background: rgba(16,185,129,0.15); color: var(--success); }
+.badge-denied { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+/* ===== App Layout ===== */
+.app-layout { display: none; width: 100%; height: 100vh; }
+.app-layout.visible { display: flex; }
+
+/* ===== Sidebar (agent view) ===== */
+.sidebar {
+  width: 300px; min-width: 300px; background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+}
+.sidebar-header { padding: 20px 20px 14px; border-bottom: 1px solid var(--border); }
+.sidebar-header h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.sidebar-header p { font-size: 11px; color: var(--text-dim); margin-top: 4px; letter-spacing: 0.5px; text-transform: uppercase; }
+.sidebar-body { flex: 1; overflow-y: auto; padding: 16px; }
+.sidebar-body::-webkit-scrollbar { width: 6px; }
+.sidebar-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.sidebar-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px; }
+.profile-card { background: var(--panel-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px; margin-bottom: 16px; }
+.profile-card .profile-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.profile-card .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.profile-card .profile-name { font-size: 16px; font-weight: 600; }
+.profile-card .profile-id { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-family: 'Courier New', monospace; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.info-item label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px; }
+.info-item .val { font-size: 15px; font-weight: 600; }
+.info-item .val.credit-good { color: var(--success); }
+.info-item .val.credit-ok { color: var(--warning); }
+.info-item .val.credit-bad { color: var(--danger); }
+/* Approver review list */
+.review-search { width: 100%; padding: 8px 12px; background: var(--panel-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 13px; font-family: inherit; outline: none; margin-bottom: 10px; }
+.review-search:focus { border-color: var(--accent); }
+.review-search::placeholder { color: var(--text-muted); }
+.review-applier { background: var(--panel-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 6px; overflow: hidden; }
+.review-applier-header { padding: 10px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.15s; }
+.review-applier-header:hover { background: var(--bg); }
+.review-applier-name { font-size: 13px; font-weight: 600; }
+.review-applier-count { font-size: 11px; color: var(--text-muted); }
+.review-applier-arrow { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
+.review-applier.open .review-applier-arrow { transform: rotate(90deg); }
+.review-applier-apps { display: none; border-top: 1px solid var(--border); }
+.review-applier.open .review-applier-apps { display: block; }
+
+.app-list-section { margin-top: 8px; }
+.app-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 8px; animation: fadeIn 0.3s ease; }
+.app-card .app-id { font-size: 11px; font-family: 'Courier New', monospace; color: var(--text-muted); margin-bottom: 6px; }
+.app-card .app-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+.app-card .app-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.app-card .app-val { font-size: 13px; font-weight: 600; }
+.empty-state { text-align: center; padding: 24px 16px; color: var(--text-muted); }
+.empty-state .icon { font-size: 28px; margin-bottom: 8px; }
+.empty-state p { font-size: 12px; line-height: 1.5; }
+.sidebar-footer { padding: 12px; border-top: 1px solid var(--border); }
+.btn-logout { width: 100%; padding: 10px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-dim); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+.btn-logout:hover { border-color: var(--danger); color: var(--danger); }
+
+/* Confirm modal */
+.confirm-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000;
+  display: flex; align-items: center; justify-content: center; animation: fadeIn 0.15s ease;
+}
+.confirm-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  padding: 32px; width: 400px; max-width: 90vw; box-shadow: 0 12px 48px rgba(0,0,0,0.5); text-align: center;
+}
+.confirm-card .confirm-icon { font-size: 40px; margin-bottom: 12px; }
+.confirm-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+.confirm-card p { font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 20px; }
+.confirm-card .confirm-name { color: var(--danger); font-weight: 600; }
+.confirm-card .confirm-id { font-family: 'Courier New', monospace; font-size: 11px; color: var(--text-muted); }
+.confirm-actions { display: flex; gap: 10px; justify-content: center; }
+.confirm-actions button { padding: 10px 24px; border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.confirm-cancel { background: var(--panel-alt); border: 1px solid var(--border) !important; color: var(--text-dim); }
+.confirm-cancel:hover { border-color: var(--text-muted) !important; color: var(--text); }
+.confirm-delete { background: var(--danger); color: #fff; }
+.confirm-delete:hover { opacity: 0.85; }
+
+/* ===== Main Chat ===== */
+.main { flex: 1; display: flex; flex-direction: column; height: 100vh; min-width: 0; }
+.chat-header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--panel); }
+.chat-header h2 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); transition: background 0.3s; }
+.status-dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.chat-messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.chat-messages::-webkit-scrollbar { width: 6px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.welcome-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); text-align: center; gap: 12px; }
+.welcome-state .icon { font-size: 48px; }
+.welcome-state h3 { font-size: 18px; color: var(--text-dim); }
+.welcome-state p { font-size: 13px; max-width: 320px; line-height: 1.6; }
+.msg { display: flex; gap: 10px; max-width: 75%; animation: fadeIn 0.3s ease; }
+.msg.user { align-self: flex-end; flex-direction: row-reverse; }
+.msg.agent { align-self: flex-start; }
+.msg-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; background: var(--border); }
+.msg.agent .msg-avatar { background: var(--accent); }
+.msg.user .msg-avatar { background: var(--bubble-user); }
+.msg-bubble { padding: 12px 16px; border-radius: var(--radius); font-size: 14px; line-height: 1.6; word-wrap: break-word; }
+.msg.agent .msg-bubble { background: var(--bubble-agent); border-top-left-radius: 4px; }
+.msg.user .msg-bubble { background: var(--bubble-user); border-top-right-radius: 4px; }
+.msg-bubble code { background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 13px; }
+.msg-bubble strong { font-weight: 600; }
+.msg-time { font-size: 10px; color: var(--text-muted); margin-top: 4px; opacity: 0; transition: opacity 0.2s; }
+.msg:hover .msg-time { opacity: 1; }
+.typing { display: none; align-self: flex-start; gap: 10px; align-items: center; padding: 0 24px 12px; }
+.typing.visible { display: flex; }
+.typing .msg-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.typing-dots { display: flex; gap: 4px; padding: 12px 16px; background: var(--bubble-agent); border-radius: var(--radius); border-top-left-radius: 4px; }
+.typing-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); animation: bounce 1.4s infinite ease-in-out; }
+.typing-dots span:nth-child(2) { animation-delay: 0.16s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.32s; }
+@keyframes bounce { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
+@keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.chat-input-area { padding: 16px 24px; border-top: 1px solid var(--border); background: var(--panel); }
+.chat-input-wrap { display: flex; gap: 10px; align-items: center; background: var(--panel-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 4px 4px 16px; transition: border-color 0.2s; }
+.chat-input-wrap:focus-within { border-color: var(--accent); }
+.chat-input { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font-size: 14px; font-family: inherit; padding: 10px 0; }
+.chat-input::placeholder { color: var(--text-muted); }
+.chat-input:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-send { width: 40px; height: 40px; border-radius: var(--radius-sm); border: none; background: var(--accent); color: #fff; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; flex-shrink: 0; }
+.btn-send:hover { background: var(--accent-hover); }
+.btn-send:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ===== Admin Panel ===== */
+.admin-layout { display: none; width: 100%; height: 100vh; flex-direction: column; }
+.admin-layout.visible { display: flex; }
+.admin-topbar {
+  padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.admin-topbar h1 { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.admin-topbar .badge-admin { margin-left: 8px; }
+.admin-content { flex: 1; display: flex; overflow: hidden; }
+.admin-sidebar {
+  width: 320px; min-width: 320px; background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.admin-sidebar-header { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.admin-sidebar-header h3 { font-size: 14px; font-weight: 600; color: var(--text-dim); }
+.admin-user-list { flex: 1; overflow-y: auto; padding: 8px; }
+.admin-user-list::-webkit-scrollbar { width: 6px; }
+.admin-user-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.admin-user-item {
+  padding: 14px 16px; border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid transparent; margin-bottom: 4px; transition: all 0.15s;
+}
+.admin-user-item:hover { background: var(--panel-alt); border-color: var(--border); }
+.admin-user-item.active { background: rgba(59,130,246,0.1); border-color: var(--accent); }
+.admin-user-item .aui-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.admin-user-item .aui-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
+.admin-user-item .aui-meta .badge { font-size: 9px; }
+
+.admin-detail {
+  flex: 1; overflow-y: auto; padding: 28px 32px; display: flex; flex-direction: column; gap: 24px;
+}
+.admin-detail::-webkit-scrollbar { width: 6px; }
+.admin-detail::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.admin-detail .empty-state { margin-top: 120px; }
+.adm-section {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 24px; box-shadow: var(--shadow);
+}
+.adm-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.adm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.adm-field { display: flex; flex-direction: column; gap: 4px; }
+.adm-field label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.adm-field .adm-input { padding: 8px 12px; font-size: 13px; }
+.adm-field select {
+  padding: 8px 12px; background: var(--panel-alt); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 13px; font-family: inherit; outline: none;
+}
+.adm-field select:focus { border-color: var(--accent); }
+.adm-actions { display: flex; gap: 10px; margin-top: 8px; align-items: center; }
+.adm-btn-sm { padding: 7px 16px; font-size: 12px; }
+.adm-btn-danger { background: var(--danger); }
+.adm-btn-danger:hover { background: #dc2626; }
+.adm-btn-success { background: var(--success); }
+.adm-btn-success:hover { background: #059669; }
+.adm-btn-warn { background: var(--warning); color: #000; }
+.adm-btn-warn:hover { background: #d97706; }
+.adm-save-msg { font-size: 12px; color: var(--success); animation: fadeIn 0.3s; }
+
+/* Admin loan cards */
+.adm-loan-card {
+  background: var(--panel-alt); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 16px; margin-bottom: 10px;
+}
+.adm-loan-card .alc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.adm-loan-card .alc-id { font-size: 12px; font-family: 'Courier New', monospace; color: var(--text-muted); }
+.adm-loan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.adm-loan-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+@media (max-width: 768px) {
+  .sidebar { width: 100%; min-width: unset; height: auto; max-height: 50vh; border-right: none; border-bottom: 1px solid var(--border); }
+  .app-layout.visible { flex-direction: column; }
+  .admin-sidebar { width: 100%; min-width: unset; height: 200px; border-right: none; border-bottom: 1px solid var(--border); }
+  .admin-content { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Login Screen ===== -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card" style="position:relative">
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" style="position:absolute;top:16px;right:16px">🌙</button>
+    <div class="logo">🏦</div>
+    <h1>LoanAgent</h1>
+    <div class="subtitle">AI Loan Application System</div>
+    <form id="loginForm" onsubmit="doLogin(event)">
+      <div class="login-field">
+        <label for="loginUsername">Username</label>
+        <input type="text" id="loginUsername" placeholder="Enter your username" autocomplete="off" autofocus>
+      </div>
+      <div class="login-field">
+        <label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" placeholder="Enter your password" autocomplete="off">
+      </div>
+      <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
+      <div class="login-error-msg" id="loginError"></div>
+    </form>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-dim)">
+      Don't have an account? <a href="#" onclick="showRegister(event)" style="color:var(--accent);text-decoration:none;font-weight:600">Register</a>
+    </div>
+  </div>
+  <!-- Register Card -->
+  <div class="login-card" id="registerCard" style="display:none;position:relative">
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" style="position:absolute;top:16px;right:16px">🌙</button>
+    <div class="logo">📝</div>
+    <h1>Register</h1>
+    <div class="subtitle">Create a new account</div>
+    <form id="registerForm" onsubmit="doRegister(event)">
+      <div class="login-field">
+        <label for="regUsername">Username</label>
+        <input type="text" id="regUsername" placeholder="Choose a username" autocomplete="off">
+      </div>
+      <div class="login-field">
+        <label for="regPassword">Password</label>
+        <input type="password" id="regPassword" placeholder="Choose a password" autocomplete="off">
+      </div>
+      <button type="submit" class="login-btn" id="regBtn">Create Account</button>
+      <div class="login-error-msg" id="regError"></div>
+    </form>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-dim)">
+      Already have an account? <a href="#" onclick="showLogin(event)" style="color:var(--accent);text-decoration:none;font-weight:600">Sign In</a>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Agent Layout ===== -->
+<div class="app-layout" id="appLayout">
+  <aside class="sidebar">
+    <div class="sidebar-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h1>🏦 LoanAgent</h1><p>AI Loan Application System</p></div>
+      <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">🌙</button>
+    </div>
+    <div class="sidebar-body">
+      <div class="sidebar-section-title">Profile</div>
+      <div class="profile-card">
+        <div class="profile-header">
+          <div class="avatar" id="profileAvatar"></div>
+          <div><div class="profile-name" id="profileName"></div><div class="profile-id" id="profileId"></div></div>
+        </div>
+        <div style="margin-bottom:14px"><span class="badge" id="profileRoleBadge"></span></div>
+        <div id="profileFinancials" class="info-grid">
+          <div class="info-item"><label>Credit Score</label><div class="val" id="profileCredit"></div></div>
+          <div class="info-item"><label>Risk Rating</label><div class="val" id="profileRisk"></div></div>
+          <div class="info-item"><label>Monthly Income</label><div class="val" id="profileIncome"></div></div>
+          <div class="info-item"><label>Monthly Debt</label><div class="val" id="profileDebt"></div></div>
+          <div class="info-item"><label>Late Payments (2yr)</label><div class="val" id="profileLate"></div></div>
+          <div class="info-item"><label>DTI Ratio</label><div class="val" id="profileDTI"></div></div>
+        </div>
+      </div>
+      <div class="app-list-section" id="appListSection">
+        <div class="sidebar-section-title" style="display:flex;justify-content:space-between;align-items:center">Applications <button onclick="loadApplications()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);font-size:11px;padding:2px 8px;cursor:pointer">↻</button></div>
+        <div id="appsList"><div class="empty-state"><div class="icon">📭</div><p>No applications yet.</p></div></div>
+      </div>
+      <div id="approverReviewSection" style="display:none">
+        <div class="sidebar-section-title" style="display:flex;justify-content:space-between;align-items:center">Pending Reviews <button onclick="loadPendingReviews()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);font-size:11px;padding:2px 8px;cursor:pointer">↻</button></div>
+        <input type="text" class="review-search" id="reviewSearch" placeholder="Search applicants..." oninput="filterReviews()">
+        <div id="reviewList"><div class="empty-state"><div class="icon">📭</div><p>No pending applications.</p></div></div>
+      </div>
+    </div>
+    <div class="sidebar-footer"><button class="btn-logout" onclick="doLogout()">🚪 Sign Out</button></div>
+  </aside>
+  <main class="main">
+    <div class="chat-header"><h2><span class="status-dot online"></span> Loan Application Assistant</h2></div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="welcome-state" id="welcomeState"><div class="icon">💬</div><h3>How can I help you today?</h3><p>Ask me about loan applications, check your eligibility, or manage existing applications.</p></div>
+    </div>
+    <div class="typing" id="typingIndicator"><div class="msg-avatar">🤖</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
+    <div class="chat-input-area"><div class="chat-input-wrap"><input type="text" class="chat-input" id="chatInput" placeholder="Type your message..." autocomplete="off"><button class="btn-send" id="btnSend" onclick="sendMessage()">➤</button></div></div>
+  </main>
+</div>
+
+<!-- ===== Admin Layout ===== -->
+<div class="admin-layout" id="adminLayout">
+  <div class="admin-topbar">
+    <h1>🏦 LoanAgent <span class="badge badge-admin">Admin Panel</span></h1>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">🌙</button>
+      <button class="btn-logout" onclick="doLogout()" style="width:auto;padding:8px 20px">🚪 Sign Out</button>
+    </div>
+  </div>
+  <div class="admin-content">
+    <div class="admin-sidebar">
+      <div class="admin-sidebar-header" style="display:flex;justify-content:space-between;align-items:center">
+        <h3>👥 Customer Accounts</h3>
+        <button class="adm-btn adm-btn-sm adm-btn-success" onclick="showCreateUserForm()" style="padding:5px 12px;font-size:11px">＋ New</button>
+      </div>
+      <div class="admin-user-list" id="adminUserList"></div>
+    </div>
+    <div class="admin-detail" id="adminDetail">
+      <div class="empty-state" style="margin-top:120px">
+        <div class="icon" style="font-size:48px">👈</div>
+        <h3 style="font-size:16px;color:var(--text-dim);margin-top:12px">Select a customer</h3>
+        <p>Choose a customer from the list to view and manage their details and loan applications.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let currentUser = null;
+let isWaiting = false;
+let adminUsers = [];
+let adminSelectedUserId = null;
+
+// ── DOM refs ──
+const loginScreen = document.getElementById('loginScreen');
+const appLayout = document.getElementById('appLayout');
+const adminLayout = document.getElementById('adminLayout');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const btnSend = document.getElementById('btnSend');
+const welcomeState = document.getElementById('welcomeState');
+const typingIndicator = document.getElementById('typingIndicator');
+const appsList = document.getElementById('appsList');
+
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+// ── Theme ──
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const next = isLight ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  updateThemeIcons();
+}
+function updateThemeIcons() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  document.querySelectorAll('.theme-toggle').forEach(btn => btn.textContent = isLight ? '☀️' : '🌙');
+}
+(function() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  updateThemeIcons();
+})();
+
+// ── Utils ──
+function calcRisk(p) {
+  if (!p.gross_monthly_income) return { score: 0, rating: 'N/A' };
+  let cs = p.credit_score >= 750 ? 100 : p.credit_score >= 700 ? 80 : p.credit_score >= 650 ? 60 : 30;
+  const dti = p.total_monthly_debt / p.gross_monthly_income * 100;
+  let dp = dti < 20 ? 100 : dti <= 35 ? 80 : dti <= 43 ? 60 : 20;
+  const annual = p.gross_monthly_income * 12;
+  let ip = annual >= 100000 ? 100 : annual >= 60000 ? 80 : 50;
+  let pp = p.late_payments_last_2_years === 0 ? 100 : p.late_payments_last_2_years <= 2 ? 60 : 20;
+  const score = Math.round(cs * 0.4 + dp * 0.35 + ip * 0.15 + pp * 0.10);
+  const rating = score >= 85 ? 'Low' : score >= 65 ? 'Medium' : 'High';
+  return { score, rating };
+}
+
+function roleBadgeClass(role) {
+  if (role === 'Approver') return 'badge-approver';
+  if (role === 'Admin') return 'badge-admin';
+  return 'badge-applier';
+}
+
+function statusBadgeClass(s) {
+  if (s === 'Approved') return 'badge-approved';
+  if (s === 'Denied') return 'badge-denied';
+  return 'badge-pending';
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ══════════════════════════════════════
+// LOGIN
+// ══════════════════════════════════════
+async function doLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  const btn = document.getElementById('loginBtn');
+  if (!username || !password) { errEl.textContent = 'Please enter both username and password.'; return; }
+  errEl.textContent = '';
+  btn.disabled = true; btn.textContent = 'Signing in...';
+  try {
+    const res = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, password}) });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Login failed.'; btn.disabled = false; btn.textContent = 'Sign In'; return; }
+    currentUser = data.user;
+    loginScreen.classList.add('hidden');
+    if (currentUser.role === 'Admin') {
+      adminLayout.classList.add('visible');
+      loadAdminUsers();
+    } else {
+      appLayout.classList.add('visible');
+      showProfile(currentUser);
+      addAgentMessage("Welcome, " + currentUser.username + "! I'm your Loan Application Assistant. How can I help you today?");
+      loadApplications();
+      chatInput.focus();
+    }
+  } catch (err) { errEl.textContent = 'Connection error: ' + err.message; btn.disabled = false; btn.textContent = 'Sign In'; }
+}
+
+function showRegister(e) {
+  e.preventDefault();
+  document.querySelector('.login-card:not(#registerCard)').style.display = 'none';
+  document.getElementById('registerCard').style.display = '';
+  document.getElementById('regError').textContent = '';
+  updateThemeIcons();
+}
+function showLogin(e) {
+  e.preventDefault();
+  document.getElementById('registerCard').style.display = 'none';
+  document.querySelector('.login-card:not(#registerCard)').style.display = '';
+  document.getElementById('loginError').textContent = '';
+  updateThemeIcons();
+}
+
+async function doRegister(e) {
+  e.preventDefault();
+  const username = document.getElementById('regUsername').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const errEl = document.getElementById('regError');
+  const btn = document.getElementById('regBtn');
+  if (!username || !password) { errEl.textContent = 'Please fill in all fields.'; return; }
+  errEl.textContent = '';
+  btn.disabled = true; btn.textContent = 'Creating...';
+  try {
+    const res = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password}) });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Registration failed.'; btn.disabled = false; btn.textContent = 'Create Account'; return; }
+    errEl.style.color = 'var(--success)';
+    errEl.textContent = 'Account created! Signing in...';
+    // Auto-login
+    const loginRes = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password}) });
+    const loginData = await loginRes.json();
+    if (loginRes.ok) {
+      currentUser = loginData.user;
+      loginScreen.classList.add('hidden');
+      document.getElementById('registerCard').style.display = 'none';
+      document.querySelector('.login-card:not(#registerCard)').style.display = '';
+      appLayout.classList.add('visible');
+      showProfile(currentUser);
+      addAgentMessage("Welcome, " + currentUser.username + "! I'm your Loan Application Assistant. How can I help you today?");
+      loadApplications();
+      chatInput.focus();
+    }
+  } catch(err) { errEl.textContent = 'Connection error: ' + err.message; }
+  btn.disabled = false; btn.textContent = 'Create Account';
+  errEl.style.color = '';
+}
+
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' });
+  currentUser = null; adminSelectedUserId = null; adminUsers = [];
+  appLayout.classList.remove('visible');
+  adminLayout.classList.remove('visible');
+  loginScreen.classList.remove('hidden');
+  chatMessages.innerHTML = ''; welcomeState.style.display = '';
+  appsList.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No applications yet.</p></div>';
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('loginBtn').disabled = false;
+  document.getElementById('loginBtn').textContent = 'Sign In';
+}
+
+// ══════════════════════════════════════
+// AGENT VIEW
+// ══════════════════════════════════════
+function showProfile(u) {
+  document.getElementById('profileAvatar').textContent = u.username.charAt(0).toUpperCase();
+  document.getElementById('profileName').textContent = u.username;
+  document.getElementById('profileId').textContent = u.user_id;
+  const rb = document.getElementById('profileRoleBadge');
+  rb.textContent = u.role; rb.className = 'badge ' + roleBadgeClass(u.role);
+
+  const isApplier = u.role === 'Applier';
+  const isApprover = u.role === 'Approver';
+  document.getElementById('profileFinancials').style.display = isApplier ? '' : 'none';
+  document.getElementById('appListSection').style.display = isApplier ? '' : 'none';
+  document.getElementById('approverReviewSection').style.display = isApprover ? '' : 'none';
+  if (isApprover) loadPendingReviews();
+
+  if (isApplier) {
+    const p = u.profile;
+    const csEl = document.getElementById('profileCredit');
+    csEl.textContent = p.credit_score;
+    csEl.className = 'val ' + (p.credit_score >= 700 ? 'credit-good' : p.credit_score >= 650 ? 'credit-ok' : 'credit-bad');
+    const risk = calcRisk(p);
+    document.getElementById('profileRisk').innerHTML = '<span class="badge badge-' + risk.rating.toLowerCase() + '">' + risk.rating + ' (' + risk.score + ')</span>';
+    document.getElementById('profileIncome').textContent = '$' + p.gross_monthly_income.toLocaleString();
+    document.getElementById('profileDebt').textContent = '$' + p.total_monthly_debt.toLocaleString();
+    document.getElementById('profileLate').textContent = p.late_payments_last_2_years;
+    const dti = p.gross_monthly_income ? (p.total_monthly_debt / p.gross_monthly_income * 100).toFixed(1) : '0.0';
+    document.getElementById('profileDTI').textContent = dti + '%';
+  }
+}
+
+async function refreshProfile() {
+  try {
+    const res = await fetch('/api/user');
+    if (!res.ok) return;
+    const u = await res.json();
+    currentUser = u;
+    showProfile(u);
+  } catch(e) {}
+}
+
+function formatMsg(text) {
+  let s = text.trim();
+  s = s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return s.replace(/\n/g, '<br>');
+}
+function timeStr() { return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+
+function addUserMessage(text) {
+  welcomeState.style.display = 'none';
+  const d = document.createElement('div'); d.className = 'msg user';
+  d.innerHTML = '<div class="msg-avatar">👤</div><div><div class="msg-bubble">'+formatMsg(text)+'</div><div class="msg-time" style="text-align:right">'+timeStr()+'</div></div>';
+  chatMessages.appendChild(d); scrollBottom();
+}
+function addAgentMessage(text) {
+  welcomeState.style.display = 'none';
+  const d = document.createElement('div'); d.className = 'msg agent';
+  d.innerHTML = '<div class="msg-avatar">🤖</div><div><div class="msg-bubble">'+formatMsg(text)+'</div><div class="msg-time">'+timeStr()+'</div></div>';
+  chatMessages.appendChild(d); scrollBottom();
+}
+function addErrorMessage(text) {
+  const d = document.createElement('div'); d.className = 'msg agent';
+  d.innerHTML = '<div class="msg-avatar" style="background:var(--danger)">⚠</div><div><div class="msg-bubble" style="border:1px solid var(--danger)">'+formatMsg(text)+'</div></div>';
+  chatMessages.appendChild(d); scrollBottom();
+}
+function scrollBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
+function showTyping(s) { typingIndicator.classList.toggle('visible',s); if(s) scrollBottom(); }
+
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text || isWaiting || !currentUser) return;
+  addUserMessage(text); chatInput.value = '';
+  isWaiting = true; chatInput.disabled = true; btnSend.disabled = true; showTyping(true);
+  try {
+    const res = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:text}) });
+    const data = await res.json(); showTyping(false);
+    if (!res.ok) addErrorMessage(data.error||'Something went wrong.'); else addAgentMessage(data.response);
+    refreshProfile();
+    loadApplications();
+    if (currentUser && currentUser.role === 'Approver') loadPendingReviews();
+  } catch(err) { showTyping(false); addErrorMessage('Network error: '+err.message); }
+  finally { isWaiting=false; chatInput.disabled=false; btnSend.disabled=false; chatInput.focus(); }
+}
+
+async function loadApplications() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch('/api/applications'); const data = await res.json(); if(!res.ok) return;
+    const apps = data.applications || [];
+    if (!apps.length) { appsList.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No applications found.</p></div>'; return; }
+    let h = '';
+    for (const a of apps) {
+      h += '<div class="app-card"><div class="app-id">'+a.application_id+'</div>'
+        +'<div class="app-row"><span class="app-label">Amount</span><span class="app-val">$'+Number(a.loan_amount).toLocaleString()+'</span></div>'
+        +'<div class="app-row"><span class="app-label">Duration</span><span class="app-val">'+a.duration_months+' months</span></div>'
+        +'<div class="app-row"><span class="app-label">Status</span><span class="badge '+statusBadgeClass(a.status)+'">'+a.status+'</span></div>'
+        +'<div class="app-row"><span class="app-label">Applicant</span><span style="font-size:11px;color:var(--text-dim)">'+a.user_id+'</span></div></div>';
+    }
+    appsList.innerHTML = h;
+  } catch(err) { console.error(err); }
+}
+
+// ══════════════════════════════════════
+// APPROVER REVIEWS
+// ══════════════════════════════════════
+let pendingReviewData = [];
+
+async function loadPendingReviews() {
+  try {
+    const res = await fetch('/api/pending-reviews');
+    if (!res.ok) return;
+    const data = await res.json();
+    pendingReviewData = data.appliers || [];
+    renderReviews(pendingReviewData);
+  } catch(e) { console.error(e); }
+}
+
+function renderReviews(appliers) {
+  const el = document.getElementById('reviewList');
+  if (!appliers.length) { el.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No pending applications.</p></div>'; return; }
+  let h = '';
+  for (const ap of appliers) {
+    h += '<div class="review-applier" id="rev-'+esc(ap.user_id)+'">'
+      +'<div class="review-applier-header" onclick="toggleReviewApplier(\''+esc(ap.user_id)+'\')">'
+      +'<div><span class="review-applier-name">'+esc(ap.username)+'</span> <span class="review-applier-count">'+ap.applications.length+' pending</span></div>'
+      +'<span class="review-applier-arrow">▶</span></div>'
+      +'<div class="review-applier-apps">';
+    for (const a of ap.applications) {
+      h += '<div class="app-card" style="margin:8px;animation:none">'
+        +'<div class="app-id">'+a.application_id+'</div>'
+        +'<div class="app-row"><span class="app-label">Amount</span><span class="app-val">$'+Number(a.loan_amount).toLocaleString()+'</span></div>'
+        +'<div class="app-row"><span class="app-label">Duration</span><span class="app-val">'+a.duration_months+' months</span></div>'
+        +'<div class="app-row"><span class="app-label">Status</span><span class="badge '+statusBadgeClass(a.status)+'">'+a.status+'</span></div>'
+        +'</div>';
+    }
+    h += '</div></div>';
+  }
+  el.innerHTML = h;
+}
+
+function toggleReviewApplier(uid) {
+  const el = document.getElementById('rev-'+uid);
+  if (el) el.classList.toggle('open');
+}
+
+function filterReviews() {
+  const q = document.getElementById('reviewSearch').value.trim().toLowerCase();
+  if (!q) { renderReviews(pendingReviewData); return; }
+  const filtered = pendingReviewData.filter(ap => ap.username.toLowerCase().includes(q) || ap.user_id.toLowerCase().includes(q));
+  renderReviews(filtered);
+}
+
+// ══════════════════════════════════════
+// ADMIN PANEL
+// ══════════════════════════════════════
+async function loadAdminUsers() {
+  try {
+    const res = await fetch('/api/admin/users'); const data = await res.json();
+    if (!res.ok) return;
+    adminUsers = data.users || [];
+    renderAdminUserList();
+  } catch(err) { console.error(err); }
+}
+
+function renderAdminUserList() {
+  const el = document.getElementById('adminUserList');
+  let h = '';
+  for (const u of adminUsers) {
+    const active = u.user_id === adminSelectedUserId ? ' active' : '';
+    h += '<div class="admin-user-item'+active+'" onclick="selectAdminUser(\''+u.user_id+'\')">'
+      +'<div class="aui-name">'+esc(u.username)+'</div>'
+      +'<div class="aui-meta"><span class="badge '+roleBadgeClass(u.role)+'">'+u.role+'</span>'
+      +'<span>'+u.user_id+'</span></div></div>';
+  }
+  el.innerHTML = h;
+}
+
+async function selectAdminUser(uid) {
+  adminSelectedUserId = uid;
+  renderAdminUserList();
+  // Re-fetch fresh data
+  await loadAdminUsers();
+  const u = adminUsers.find(x => x.user_id === uid);
+  if (!u) return;
+
+  // Load user's applications
+  let apps = [];
+  try {
+    const res = await fetch('/api/admin/applications?user_id=' + uid);
+    const data = await res.json();
+    if (res.ok) apps = data.applications || [];
+  } catch(e) {}
+
+  renderAdminDetail(u, apps);
+}
+
+function renderAdminDetail(u, apps) {
+  const el = document.getElementById('adminDetail');
+  const isApplier = u.role === 'Applier';
+
+  let h = '';
+
+  // ── Login Details section ──
+  h += '<div class="adm-section"><h3>🔐 Login Details</h3><div class="adm-grid">'
+    +'<div class="adm-field"><label>Customer ID</label><input class="adm-input" value="'+esc(u.user_id)+'" disabled></div>'
+    +'<div class="adm-field"><label>Username</label><input class="adm-input" id="adm-username" value="'+esc(u.username)+'"'+(u.role==='Admin'?' disabled':'')+' ></div>'
+    +'<div class="adm-field"><label>Password</label><input class="adm-input" id="adm-password" value="'+esc(u.password)+'"'+(u.role==='Admin'?' disabled':'')+' ></div>'
+    +'<div class="adm-field"><label>Role</label><select id="adm-role"'+(u.role==='Admin'?' disabled':'')+'>'
+    +'<option value="Applier"'+(u.role==='Applier'?' selected':'')+'>Applier</option>'
+    +'<option value="Approver"'+(u.role==='Approver'?' selected':'')+'>Approver</option>'
+    +'<option value="Admin"'+(u.role==='Admin'?' selected':'')+'>Admin</option>'
+    +'</select></div></div></div>';
+
+  // ── Financial Profile section (Applier only) ──
+  if (isApplier) {
+    const risk = calcRisk(u.profile);
+    h += '<div class="adm-section"><h3>📊 Financial Profile</h3><div class="adm-grid">'
+      +'<div class="adm-field"><label>Credit Score</label><input class="adm-input" id="adm-credit" type="number" value="'+u.profile.credit_score+'"></div>'
+      +'<div class="adm-field"><label>Gross Monthly Income</label><input class="adm-input" id="adm-income" type="number" step="0.01" value="'+u.profile.gross_monthly_income+'"></div>'
+      +'<div class="adm-field"><label>Total Monthly Debt</label><input class="adm-input" id="adm-debt" type="number" step="0.01" value="'+u.profile.total_monthly_debt+'"></div>'
+      +'<div class="adm-field"><label>Late Payments (2yr)</label><input class="adm-input" id="adm-late" type="number" value="'+u.profile.late_payments_last_2_years+'"></div>'
+      +'</div>'
+      +'<div style="margin-top:12px;font-size:13px;color:var(--text-dim)">Risk Rating: <span class="badge badge-'+risk.rating.toLowerCase()+'">'+risk.rating+' ('+risk.score+')</span></div>'
+      +'</div>';
+  }
+
+  // ── Loan Applications section (Applier only) ──
+  if (isApplier) {
+    h += '<div class="adm-section"><h3>📄 Loan Applications ('+apps.length+')</h3>';
+    if (!apps.length) {
+      h += '<div class="empty-state"><div class="icon">📭</div><p>No applications for this customer.</p></div>';
+    } else {
+      for (const a of apps) {
+        h += '<div class="adm-loan-card">'
+          +'<div class="alc-header"><span class="alc-id">'+a.application_id+'</span><span class="badge '+statusBadgeClass(a.status)+'">'+a.status+'</span></div>'
+          +'<div class="adm-loan-grid">'
+          +'<div class="adm-field"><label>Loan Amount</label><input class="adm-input" id="adm-amt-'+a.application_id+'" type="number" step="0.01" value="'+a.loan_amount+'"></div>'
+          +'<div class="adm-field"><label>Duration (months)</label><input class="adm-input" id="adm-dur-'+a.application_id+'" type="number" value="'+a.duration_months+'"></div>'
+          +'</div>'
+          +'<div class="adm-loan-actions">'
+          +'<button class="adm-btn adm-btn-sm" onclick="saveAdminApp(\''+a.application_id+'\')">💾 Save</button>';
+        if (a.status === 'Pending') {
+          h += '<button class="adm-btn adm-btn-sm adm-btn-success" onclick="setAppStatus(\''+a.application_id+'\',\'Approved\')">✅ Approve</button>'
+            +'<button class="adm-btn adm-btn-sm adm-btn-danger" onclick="setAppStatus(\''+a.application_id+'\',\'Denied\')">❌ Deny</button>';
+        } else if (a.status === 'Approved') {
+          h += '<button class="adm-btn adm-btn-sm adm-btn-warn" onclick="setAppStatus(\''+a.application_id+'\',\'Pending\')">⏪ Revert to Pending</button>'
+            +'<button class="adm-btn adm-btn-sm adm-btn-danger" onclick="setAppStatus(\''+a.application_id+'\',\'Denied\')">❌ Deny</button>';
+        } else {
+          h += '<button class="adm-btn adm-btn-sm adm-btn-warn" onclick="setAppStatus(\''+a.application_id+'\',\'Pending\')">⏪ Revert to Pending</button>';
+        }
+        h += '<span id="adm-app-msg-'+a.application_id+'"></span></div></div>';
+      }
+    }
+    h += '</div>';
+  }
+
+  // ── Save / Delete actions ──
+  if (u.role !== 'Admin') {
+    h += '<div class="adm-section"><div class="adm-actions">'
+      +'<button class="adm-btn adm-btn-sm" onclick="saveAdminUser(\''+u.user_id+'\')">💾 Save Changes</button>'
+      +'<button class="adm-btn adm-btn-sm adm-btn-danger" onclick="deleteAdminUser(\''+u.user_id+'\',\''+esc(u.username)+'\')">🗑 Delete Customer</button>'
+      +'<span id="adm-save-msg"></span>'
+      +'</div></div>';
+  }
+
+  el.innerHTML = h;
+}
+
+async function saveAdminUser(uid) {
+  const body = {
+    username: document.getElementById('adm-username').value,
+    password: document.getElementById('adm-password').value,
+    role: document.getElementById('adm-role').value,
+  };
+  // Only include profile data for Appliers
+  const creditEl = document.getElementById('adm-credit');
+  if (creditEl) {
+    body.profile = {
+      credit_score: parseInt(creditEl.value) || 0,
+      gross_monthly_income: parseFloat(document.getElementById('adm-income').value) || 0,
+      total_monthly_debt: parseFloat(document.getElementById('adm-debt').value) || 0,
+      late_payments_last_2_years: parseInt(document.getElementById('adm-late').value) || 0,
+    };
+  }
+  try {
+    const res = await fetch('/api/admin/users/' + uid, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    const data = await res.json();
+    const msgEl = document.getElementById('adm-save-msg');
+    if (res.ok) {
+      msgEl.innerHTML = '<span class="adm-save-msg">✓ Saved</span>';
+      setTimeout(() => { if(msgEl) msgEl.textContent=''; }, 2000);
+      await selectAdminUser(uid);
+    } else {
+      msgEl.innerHTML = '<span style="color:var(--danger);font-size:12px">'+esc(data.error||'Error')+'</span>';
+    }
+  } catch(err) { console.error(err); }
+}
+
+function deleteAdminUser(uid, username) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = '<div class="confirm-card">'
+    +'<div class="confirm-icon">⚠️</div>'
+    +'<h3>Delete Customer</h3>'
+    +'<p>Are you sure you want to permanently delete<br><span class="confirm-name">'+esc(username)+'</span><br><span class="confirm-id">'+esc(uid)+'</span></p>'
+    +'<div class="confirm-actions">'
+    +'<button class="confirm-cancel" onclick="this.closest(\'.confirm-overlay\').remove()">Cancel</button>'
+    +'<button class="confirm-delete" id="confirmDeleteBtn">Delete</button>'
+    +'</div></div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('confirmDeleteBtn').onclick = async function() {
+    this.disabled = true; this.textContent = 'Deleting...';
+    try {
+      const res = await fetch('/api/admin/users/' + uid, { method:'DELETE' });
+      const data = await res.json();
+      overlay.remove();
+      if (res.ok) {
+        adminSelectedUserId = null;
+        await loadAdminUsers();
+        document.getElementById('adminDetail').innerHTML = '<div class="empty-state" style="margin-top:120px"><div class="icon" style="font-size:48px">✅</div><h3 style="font-size:16px;color:var(--text-dim);margin-top:12px">Customer deleted</h3></div>';
+      } else {
+        addDeleteError(data.error || 'Failed to delete customer.');
+      }
+    } catch(err) { overlay.remove(); console.error(err); }
+  };
+}
+function addDeleteError(msg) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = '<div class="confirm-card"><div class="confirm-icon">❌</div><h3>Error</h3><p>'+esc(msg)+'</p>'
+    +'<div class="confirm-actions"><button class="confirm-cancel" onclick="this.closest(\'.confirm-overlay\').remove()">OK</button></div></div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+}
+
+function showCreateUserForm() {
+  adminSelectedUserId = null;
+  renderAdminUserList();
+  const el = document.getElementById('adminDetail');
+  let h = '<div class="adm-section"><h3>➕ Create New Customer</h3><div class="adm-grid">'
+    +'<div class="adm-field"><label>Username</label><input class="adm-input" id="new-username" placeholder="Enter username"></div>'
+    +'<div class="adm-field"><label>Password</label><input class="adm-input" id="new-password" placeholder="Enter password"></div>'
+    +'<div class="adm-field"><label>Role</label><select id="new-role">'
+    +'<option value="Applier">Applier</option>'
+    +'<option value="Approver">Approver</option>'
+    +'</select></div>'
+    +'</div>'
+    +'<div class="adm-actions" style="margin-top:16px">'
+    +'<button class="adm-btn adm-btn-sm adm-btn-success" onclick="createUser()">✅ Create</button>'
+    +'<span id="new-user-msg"></span>'
+    +'</div></div>';
+  el.innerHTML = h;
+}
+
+async function createUser() {
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value.trim();
+  const role = document.getElementById('new-role').value;
+  const msgEl = document.getElementById('new-user-msg');
+
+  if (!username || !password) { msgEl.innerHTML = '<span style="color:var(--danger);font-size:12px">Username and password are required.</span>'; return; }
+
+  try {
+    const res = await fetch('/api/admin/users', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password, role}) });
+    const data = await res.json();
+    if (res.ok) {
+      await loadAdminUsers();
+      await selectAdminUser(data.user.user_id);
+    } else {
+      msgEl.innerHTML = '<span style="color:var(--danger);font-size:12px">'+esc(data.error||'Error')+'</span>';
+    }
+  } catch(err) { console.error(err); }
+}
+
+async function saveAdminApp(appId) {
+  const body = {
+    loan_amount: parseFloat(document.getElementById('adm-amt-'+appId).value) || 0,
+    duration_months: parseInt(document.getElementById('adm-dur-'+appId).value) || 0,
+  };
+  try {
+    const res = await fetch('/api/admin/applications/'+appId, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    const data = await res.json();
+    const msgEl = document.getElementById('adm-app-msg-'+appId);
+    if (res.ok) {
+      msgEl.innerHTML = '<span class="adm-save-msg">✓ Saved</span>';
+      setTimeout(() => { if(msgEl) msgEl.textContent=''; }, 2000);
+    } else {
+      msgEl.innerHTML = '<span style="color:var(--danger);font-size:12px">Error</span>';
+    }
+  } catch(err) { console.error(err); }
+}
+
+async function setAppStatus(appId, status) {
+  try {
+    const res = await fetch('/api/admin/applications/'+appId, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status}) });
+    if (res.ok && adminSelectedUserId) {
+      await selectAdminUser(adminSelectedUserId);
+    }
+  } catch(err) { console.error(err); }
+}
+</script>
+</body>
+</html>
