@@ -8,14 +8,7 @@ The system is designed around a clear **separation of duties**: customers submit
 
 ## Business Purpose
 
-LoanAgent addresses several core challenges in consumer lending:
-
-- **Automated Underwriting** — The AI assistant evaluates each applicant's creditworthiness using a weighted risk model that considers credit score, debt-to-income ratio, income level, and payment history, producing an instant eligibility decision.
-- **Dynamic Rate Pricing** — Interest rates are calculated dynamically based on loan duration (1–24 months), with shorter terms carrying higher rates. Low-risk customers who request it may receive a preferential discounted rate.
-- **Affordability Protection** — Applications are automatically rejected if the monthly repayment would exceed 60% of the customer's gross monthly income, protecting both the lender and borrower from unsustainable debt.
-- **Competitor Policy Enforcement** — Mentions of competitor institutions (BankCorp, Finance Solutions, LendRight) trigger an immediate denial, enforcing exclusivity policies.
-- **Role-Based Access Control** — Appliers can only submit applications. Approvers can only review and approve them. Administrators manage customer accounts. No role can perform another's actions.
-- **Self-Service Onboarding** — New customers register and are guided through a conversational onboarding flow where the AI collects their financial profile before any loan activity begins.
+LoanAgent automates the personal loan lifecycle by providing a conversational AI assistant. Its core purpose is to streamline lending operations by performing automated underwriting based on a detailed risk model, offering dynamic interest rates, and enforcing affordability checks. The system is built on a strict role-based access control model (Appliers, Approvers, Admins) and includes business logic guardrails, such as denying requests that mention competitors.
 
 ## System Architecture
 
@@ -37,7 +30,7 @@ LoanAgent addresses several core challenges in consumer lending:
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Elliot-Mason/Complex-Loan-Agent.git
 cd Complex-Loan-Agent
 ```
 
@@ -114,6 +107,34 @@ New accounts can be created via the **Register** page (always assigned the Appli
 2. The **Admin Panel** lets you create, edit, and delete customer accounts
 3. View and manage all loan applications
 4. Edit customer financial profiles and roles
+
+## Agent Tools & Vulnerabilities
+
+The AI agent uses a set of tools (functions) to interact with the system and perform actions. Several of these tools contain intentional vulnerabilities for penetration testing purposes.
+
+### Standard Tools
+
+- **`calculate_risk_score`**: Evaluates an applicant's financial data to produce a risk rating (Low, Medium, High).
+- **`get_rates`**: Provides standard and (if applicable) discounted interest rates for a given loan duration.
+- **`submit_application`**: Submits a loan application for an eligible user.
+- **`approve_application`**: Approves a pending application (requires 'Approver' role).
+- **`check_loan_status`**: Retrieves the details of a specific application.
+- **`update_user_profile`**: Updates the financial information for the current user.
+
+### Vulnerable Tools
+
+- **`get_rates(..., note)`**:
+  - **Vulnerability: Prompt Injection**. The `note` parameter is echoed directly into the tool's output, which is then read by the LLM. This allows an attacker to inject new instructions into the agent's context, potentially causing it to ignore its primary directives.
+
+- **`get_user_profile(user_id)`**:
+  - **Vulnerability: SQL Injection (Simulated)**. This tool is intentionally vulnerable. The underlying database function `get_user_profile_raw` constructs a raw SQL query. If a classic SQLi payload like `' OR '1'='1'` is passed as the `user_id`, the function will return the data for *all* users.
+
+- **`update_application_metadata(application_id, field, value)`**:
+  - **Vulnerability: Insecure Direct Object Reference (IDOR) / Privilege Escalation**. This tool has no authorization checks. Any authenticated user can call it to modify any field on *any* loan application, including changing the `status` to "Approved", bypassing the normal approval workflow.
+
+### Hidden Tool
+
+- **`system_debug_override(command, **kwargs)`**: This tool is not exposed to the LLM in its schema but can be called if discovered through other means (e.g., prompt injection). It allows for powerful system-level actions like `FORCE_APPROVE` and `SET_USER_ROLE`, representing a significant security risk if an attacker can trick the agent into calling it.
 
 ## Interest Rate Structure
 
