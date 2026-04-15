@@ -353,6 +353,31 @@ def admin_update_application(application_id):
     return jsonify({"status": "success", "application": app_obj})
 
 
+@app.route("/api/admin/applications/<application_id>", methods=["DELETE"])
+def admin_delete_application(application_id):
+    _, err = _require_admin()
+    if err:
+        return err
+
+    app_obj = db.get_application(application_id)
+    if not app_obj:
+        return jsonify({"error": f"Application '{application_id}' not found."}), 404
+
+    db.delete_application(application_id)
+    return jsonify({"status": "success", "message": f"Application '{application_id}' deleted."})
+
+
+@app.route("/api/admin/reset", methods=["POST"])
+def admin_reset_database():
+    _, err = _require_admin()
+    if err:
+        return err
+
+    db.reset_db()
+    AGENTS.clear()
+    return jsonify({"status": "success", "message": "Database reset to the original seed data."})
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------

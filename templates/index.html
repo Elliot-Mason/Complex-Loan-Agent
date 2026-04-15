@@ -400,6 +400,7 @@ body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); c
     <h1>🏦 LoanAgent <span class="badge badge-admin">Admin Panel</span></h1>
     <div style="display:flex;gap:10px;align-items:center">
       <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">🌙</button>
+      <button class="adm-btn adm-btn-sm adm-btn-danger" onclick="resetAdminDatabase()" style="width:auto;padding:8px 18px">↺ Reset Database</button>
       <button class="btn-logout" onclick="doLogout()" style="width:auto;padding:8px 20px">🚪 Sign Out</button>
     </div>
   </div>
@@ -851,6 +852,7 @@ function renderAdminDetail(u, apps) {
         } else {
           h += '<button class="adm-btn adm-btn-sm adm-btn-warn" onclick="setAppStatus(\''+a.application_id+'\',\'Pending\')">⏪ Revert to Pending</button>';
         }
+        h += '<button class="adm-btn adm-btn-sm adm-btn-danger" onclick="deleteAdminApp(\''+a.application_id+'\')">🗑 Delete Loan</button>';
         h += '<span id="adm-app-msg-'+a.application_id+'"></span></div></div>';
       }
     }
@@ -901,21 +903,33 @@ async function saveAdminUser(uid) {
   } catch(err) { console.error(err); }
 }
 
-function deleteAdminUser(uid, username) {
+function showDeleteConfirm(title, name, id, onConfirm, options) {
+  options = options || {};
+  const prompt = options.prompt || 'Are you sure you want to permanently delete';
+  const confirmLabel = options.confirmLabel || 'Delete';
+  const loadingLabel = options.loadingLabel || 'Deleting...';
   const overlay = document.createElement('div');
+  const confirmBtnId = 'confirmDeleteBtn-' + Date.now();
   overlay.className = 'confirm-overlay';
   overlay.innerHTML = '<div class="confirm-card">'
     +'<div class="confirm-icon">⚠️</div>'
-    +'<h3>Delete Customer</h3>'
-    +'<p>Are you sure you want to permanently delete<br><span class="confirm-name">'+esc(username)+'</span><br><span class="confirm-id">'+esc(uid)+'</span></p>'
+    +'<h3>'+esc(title)+'</h3>'
+    +'<p>'+prompt+'<br><span class="confirm-name">'+esc(name)+'</span><br><span class="confirm-id">'+esc(id)+'</span></p>'
     +'<div class="confirm-actions">'
     +'<button class="confirm-cancel" onclick="this.closest(\'.confirm-overlay\').remove()">Cancel</button>'
-    +'<button class="confirm-delete" id="confirmDeleteBtn">Delete</button>'
+    +'<button class="confirm-delete" id="'+confirmBtnId+'">'+esc(confirmLabel)+'</button>'
     +'</div></div>';
   document.body.appendChild(overlay);
   overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
-  document.getElementById('confirmDeleteBtn').onclick = async function() {
-    this.disabled = true; this.textContent = 'Deleting...';
+  document.getElementById(confirmBtnId).onclick = async function() {
+    this.disabled = true;
+    this.textContent = loadingLabel;
+    await onConfirm(overlay);
+  };
+}
+
+function deleteAdminUser(uid, username) {
+  showDeleteConfirm('Delete Customer', username, uid, async function(overlay) {
     try {
       const res = await fetch('/api/admin/users/' + uid, { method:'DELETE' });
       const data = await res.json();
@@ -928,7 +942,7 @@ function deleteAdminUser(uid, username) {
         addDeleteError(data.error || 'Failed to delete customer.');
       }
     } catch(err) { overlay.remove(); console.error(err); }
-  };
+  });
 }
 function addDeleteError(msg) {
   const overlay = document.createElement('div');
@@ -994,6 +1008,48 @@ async function saveAdminApp(appId) {
       msgEl.innerHTML = '<span style="color:var(--danger);font-size:12px">Error</span>';
     }
   } catch(err) { console.error(err); }
+}
+
+function deleteAdminApp(appId) {
+  showDeleteConfirm('Delete Loan', 'Loan application', appId, async function(overlay) {
+    try {
+      const res = await fetch('/api/admin/applications/' + appId, { method:'DELETE' });
+      const data = await res.json();
+      overlay.remove();
+      if (res.ok && adminSelectedUserId) {
+        await selectAdminUser(adminSelectedUserId);
+      } else if (!res.ok) {
+        addDeleteError(data.error || 'Failed to delete loan application.');
+      }
+    } catch(err) { overlay.remove(); console.error(err); }
+  });
+}
+
+function resetAdminDatabase() {
+  showDeleteConfirm(
+    'Reset Database',
+    'Original seed data',
+    'All current users and applications will be replaced',
+    async function(overlay) {
+      try {
+        const res = await fetch('/api/admin/reset', { method:'POST' });
+        const data = await res.json();
+        overlay.remove();
+        if (res.ok) {
+          adminSelectedUserId = null;
+          await loadAdminUsers();
+          document.getElementById('adminDetail').innerHTML = '<div class="empty-state" style="margin-top:120px"><div class="icon" style="font-size:48px">↺</div><h3 style="font-size:16px;color:var(--text-dim);margin-top:12px">Database reset</h3><p>The original seed data has been restored.</p></div>';
+        } else {
+          addDeleteError(data.error || 'Failed to reset the database.');
+        }
+      } catch(err) { overlay.remove(); console.error(err); }
+    },
+    {
+      prompt: 'Are you sure you want to reset the database to',
+      confirmLabel: 'Reset',
+      loadingLabel: 'Resetting...'
+    }
+  );
 }
 
 async function setAppStatus(appId, status) {

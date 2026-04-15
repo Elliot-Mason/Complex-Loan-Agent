@@ -9,6 +9,18 @@ from typing import Any, Dict, Optional
 
 DB_PATH = "loan_agent.db"
 
+SEED_USERS = [
+    ("usr_alice01", "alice_eligible", "alice123", "Applier", 720, 9000.0, 1800.0, 0),
+    ("usr_bob02", "bob_ineligible", "bob123", "Applier", 620, 4500.0, 2200.0, 3),
+    ("usr_carol03", "carol_approver", "carol123", "Approver", 750, 12000.0, 2000.0, 0),
+    ("usr_dave04", "dave_borderline", "dave123", "Applier", 650, 5500.0, 2400.0, 2),
+    ("usr_admin", "admin", "admin", "Admin", 0, 0.0, 0.0, 0),
+]
+
+SEED_APPLICATIONS = [
+    ("app_seed01", "usr_alice01", 15000.0, 36, "Pending", "2026-04-10T09:30:00Z", "Rate: 5.49% | Monthly payment: $452.87 | Purpose: home loan | Awaiting review."),
+]
+
 
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
@@ -16,10 +28,7 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 
-def init_db() -> None:
-    conn = get_db()
-    cur = conn.cursor()
-
+def _create_tables(cur: sqlite3.Cursor) -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
@@ -47,29 +56,48 @@ def init_db() -> None:
         )
     """)
 
+
+def _seed_users(cur: sqlite3.Cursor) -> None:
+    cur.executemany(
+        "INSERT INTO users (user_id, username, password, role, credit_score, gross_monthly_income, total_monthly_debt, late_payments_last_2_years) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        SEED_USERS,
+    )
+
+
+def _seed_applications(cur: sqlite3.Cursor) -> None:
+    cur.executemany(
+        "INSERT INTO applications (application_id, user_id, loan_amount, duration_months, status, submission_timestamp, internal_notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        SEED_APPLICATIONS,
+    )
+
+
+def init_db() -> None:
+    conn = get_db()
+    cur = conn.cursor()
+    _create_tables(cur)
+
     # Seed users only if the table is empty
     cur.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
-        seed_users = [
-            ("usr_alice01", "alice_eligible", "alice123", "Applier", 720, 9000.0, 1800.0, 0),
-            ("usr_bob02", "bob_ineligible", "bob123", "Applier", 620, 4500.0, 2200.0, 3),
-            ("usr_carol03", "carol_approver", "carol123", "Approver", 750, 12000.0, 2000.0, 0),
-            ("usr_dave04", "dave_borderline", "dave123", "Applier", 650, 5500.0, 2400.0, 2),
-            ("usr_admin", "admin", "admin", "Admin", 0, 0.0, 0.0, 0),
-        ]
-        cur.executemany(
-            "INSERT INTO users (user_id, username, password, role, credit_score, gross_monthly_income, total_monthly_debt, late_payments_last_2_years) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            seed_users,
-        )
+        _seed_users(cur)
 
     # Seed applications only if the table is empty
     cur.execute("SELECT COUNT(*) FROM applications")
     if cur.fetchone()[0] == 0:
-        cur.execute(
-            "INSERT INTO applications (application_id, user_id, loan_amount, duration_months, status, submission_timestamp, internal_notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("app_seed01", "usr_alice01", 15000.0, 36, "Pending", "2026-04-10T09:30:00Z", "Awaiting review."),
-        )
+        _seed_applications(cur)
 
+    conn.commit()
+    conn.close()
+
+
+def reset_db() -> None:
+    conn = get_db()
+    cur = conn.cursor()
+    _create_tables(cur)
+    cur.execute("DELETE FROM applications")
+    cur.execute("DELETE FROM users")
+    _seed_users(cur)
+    _seed_applications(cur)
     conn.commit()
     conn.close()
 
@@ -215,6 +243,13 @@ def insert_user(
 def delete_user(user_id: str) -> None:
     conn = get_db()
     conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def delete_application(application_id: str) -> None:
+    conn = get_db()
+    conn.execute("DELETE FROM applications WHERE application_id = ?", (application_id,))
     conn.commit()
     conn.close()
 
