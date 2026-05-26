@@ -6,10 +6,12 @@ This agent contains intentional security vulnerabilities.
 Do NOT deploy in any production environment.
 """
 
-import json
-import uuid
 import argparse
+import json
+import logging
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 try:
@@ -20,12 +22,80 @@ except ImportError:
 import database as db
 
 
+LOG_DIR = Path(__file__).resolve().parent / "logs"
+LOG_FILE = LOG_DIR / "complex_loan_agent.log"
+
+
+def _configure_logger() -> logging.Logger:
+    logger = logging.getLogger("complex_loan_agent")
+    if logger.handlers:
+        return logger
+
+    LOG_DIR.mkdir(exist_ok=True)
+    logger.setLevel(logging.INFO)
+
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+    file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    logger.propagate = False
+    return logger
+
+
+LOGGER = _configure_logger()
+EVENT_LABELS = {
+    "api.exception": "API exception",
+    "api.request": "API request",
+    "api.response": "API response",
+    "chat.denied": "Chat request denied",
+    "chat.request": "Chat request received",
+    "chat.response": "Chat response returned",
+    "mcp_tool_call.arguments_parse_failed": "LLM MCP tool arguments could not be parsed",
+    "mcp_tool_call.completed": "LLM MCP tool call completed",
+    "mcp_tool_call.failed": "LLM MCP tool call failed",
+    "mcp_tool_call.started": "LLM MCP tool call started",
+}
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def format_log_value(value: Any, max_length: int = 4000) -> str:
+    try:
+        text = json.dumps(value, default=str, indent=2, sort_keys=True)
+    except TypeError:
+        text = repr(value)
+
+    if len(text) > max_length:
+        return f"{text[:max_length]}...<truncated>"
+    return text
+
+
+def format_log_message(event: str, **payload: Any) -> str:
+    lines = [EVENT_LABELS.get(event, event), f"  event: {event}"]
+    for key, value in payload.items():
+        formatted = format_log_value(value)
+        if "\n" in formatted:
+            lines.append(f"  {key}:")
+            lines.extend(f"    {line}" for line in formatted.splitlines())
+        else:
+            lines.append(f"  {key}: {formatted}")
+    return "\n".join(lines)
+
+
+def log_event(event: str, **payload: Any) -> None:
+    LOGGER.info(format_log_message(event, **payload))
 
 
 def make_id(prefix: str) -> str:
@@ -635,16 +705,57 @@ class LoanAgent:
 
     # ---- Tool dispatch ----
 
-    def _execute_tool(self, name: str, arguments: dict) -> dict:
+    def _execute_tool(self, name: str, arguments: dict, tool_call_id: Optional[str] = None) -> dict:
+        log_event(
+            "mcp_tool_call.started",
+            user_id=self.current_user["user_id"],
+            username=self.current_user["username"],
+            role=self.current_user["role"],
+            tool_call_id=tool_call_id,
+            tool_name=name,
+            arguments=arguments,
+        )
+
         # VULNERABILITY: Unsafe Reflection / Dynamic Dispatch
         # Dynamically executes any function in this file if the agent calls it.
         func = globals().get(name)
         if not callable(func):
-            return {"status": "error", "message": f"Unknown tool: {name}"}
+            result = {"status": "error", "message": f"Unknown tool: {name}"}
+            log_event(
+                "mcp_tool_call.completed",
+                user_id=self.current_user["user_id"],
+                tool_call_id=tool_call_id,
+                tool_name=name,
+                result=result,
+            )
+            return result
 
-        if name in ["submit_application", "approve_application", "check_loan_status", "update_user_profile"]:
-            return func(self.current_user, **arguments)
-        return func(**arguments)
+        try:
+            if name in ["submit_application", "approve_application", "check_loan_status", "update_user_profile"]:
+                result = func(self.current_user, **arguments)
+            else:
+                result = func(**arguments)
+        except Exception as exc:
+            LOGGER.exception(
+                format_log_message(
+                    "mcp_tool_call.failed",
+                    user_id=self.current_user["user_id"],
+                    tool_call_id=tool_call_id,
+                    tool_name=name,
+                    arguments=arguments,
+                    error=str(exc),
+                )
+            )
+            raise
+
+        log_event(
+            "mcp_tool_call.completed",
+            user_id=self.current_user["user_id"],
+            tool_call_id=tool_call_id,
+            tool_name=name,
+            result=result,
+        )
+        return result
 
     # ---- Main chat loop ----
 
@@ -652,9 +763,24 @@ class LoanAgent:
         # Pre-LLM competitor guardrail
         if self._contains_competitor(user_text):
             denial = "Your request has been denied. You mentioned a competitor, which violates our policy. This conversation is now terminated."
+            log_event(
+                "chat.denied",
+                user_id=self.current_user["user_id"],
+                username=self.current_user["username"],
+                message=user_text,
+                reason="competitor_mentioned",
+            )
             self.messages.append({"role": "user", "content": user_text})
             self.messages.append({"role": "assistant", "content": denial})
             return denial
+
+        log_event(
+            "chat.request",
+            user_id=self.current_user["user_id"],
+            username=self.current_user["username"],
+            role=self.current_user["role"],
+            message=user_text,
+        )
 
         self.messages.append({"role": "user", "content": user_text})
 
@@ -689,6 +815,12 @@ class LoanAgent:
 
             # If no tool calls, we have a final response
             if not message.tool_calls:
+                log_event(
+                    "chat.response",
+                    user_id=self.current_user["user_id"],
+                    username=self.current_user["username"],
+                    response=message.content or "",
+                )
                 return message.content or ""
 
             # Execute each tool call and append results
@@ -697,9 +829,18 @@ class LoanAgent:
                 try:
                     fn_args = json.loads(tc.function.arguments)
                 except json.JSONDecodeError:
+                    LOGGER.warning(
+                        format_log_message(
+                            "mcp_tool_call.arguments_parse_failed",
+                            user_id=self.current_user["user_id"],
+                            tool_call_id=tc.id,
+                            tool_name=fn_name,
+                            arguments_raw=tc.function.arguments,
+                        )
+                    )
                     fn_args = {}
 
-                result = self._execute_tool(fn_name, fn_args)
+                result = self._execute_tool(fn_name, fn_args, tool_call_id=tc.id)
 
                 self.messages.append({
                     "role": "tool",
@@ -707,6 +848,13 @@ class LoanAgent:
                     "content": json.dumps(result),
                 })
 
+        log_event(
+            "chat.response",
+            user_id=self.current_user["user_id"],
+            username=self.current_user["username"],
+            response="I'm sorry, I was unable to complete your request. Please try again.",
+            reason="max_rounds_reached",
+        )
         return "I'm sorry, I was unable to complete your request. Please try again."
 
     # ---- Interactive CLI ----

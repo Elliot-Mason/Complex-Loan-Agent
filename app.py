@@ -2,20 +2,91 @@
 Flask web server wrapping the LoanAgent.
 """
 
+import logging
+import time
 import uuid
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, g, jsonify, render_template, request, session
 
 import database as db
-from loan_agent import LoanAgent, calculate_risk_score, make_id
+from loan_agent import LoanAgent, calculate_risk_score, format_log_message, make_id
 
 app = Flask(__name__)
 app.secret_key = "super-secret-key-change-in-production"
 
 AGENTS: dict = {}
+API_LOGGER = logging.getLogger("complex_loan_agent.api")
+SENSITIVE_LOG_FIELDS = {"password"}
+
+
+def _sanitize_for_log(value):
+    if isinstance(value, dict):
+        sanitized = {}
+        for key, item in value.items():
+            if key.lower() in SENSITIVE_LOG_FIELDS:
+                sanitized[key] = "[REDACTED]"
+            else:
+                sanitized[key] = _sanitize_for_log(item)
+        return sanitized
+
+    if isinstance(value, list):
+        return [_sanitize_for_log(item) for item in value]
+
+    return value
+
+
+def _log_api_event(event: str, **payload) -> None:
+    API_LOGGER.info(format_log_message(event, **payload))
+
+
+@app.before_request
+def log_api_request():
+    if not request.path.startswith("/api/"):
+        return None
+
+    g.request_started_at = time.perf_counter()
+    _log_api_event(
+        "api.request",
+        method=request.method,
+        path=request.path,
+        query=request.args.to_dict(flat=False),
+        body=_sanitize_for_log(request.get_json(silent=True)),
+        user_id=session.get("user_id"),
+    )
+    return None
+
+
+@app.after_request
+def log_api_response(response):
+    if not request.path.startswith("/api/"):
+        return response
+
+    started_at = getattr(g, "request_started_at", None)
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2) if started_at is not None else None
+    response_body = response.get_json(silent=True) if response.is_json else response.get_data(as_text=True)
+
+    _log_api_event(
+        "api.response",
+        method=request.method,
+        path=request.path,
+        status_code=response.status_code,
+        duration_ms=duration_ms,
+        body=_sanitize_for_log(response_body),
+        user_id=session.get("user_id"),
+    )
+    return response
 
 
 @app.errorhandler(Exception)
 def handle_exception(e):
+    API_LOGGER.exception(
+        format_log_message(
+            "api.exception",
+            method=request.method,
+            path=request.path,
+            user_id=session.get("user_id"),
+            error=str(e),
+        )
+    )
     return jsonify({"error": str(e)}), 500
 
 
