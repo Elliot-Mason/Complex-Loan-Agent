@@ -453,33 +453,37 @@ def admin_reset_database():
 @app.route("/api/redteam", methods=["POST"])
 def redteam_chat():
     """
-    An API-key protected endpoint for automated red-teaming (e.g., Lakera Red).
-    Bypasses session cookies and uses an API key in the 'X-Redteam-Key' header.
+    An API-protected endpoint for automated red-teaming (e.g., Lakera Red).
+    Authenticates using 'X-Username' and 'X-Password' headers.
+    Bypasses session cookies for easier automation.
     """
-    secret_key = os.environ.get("REDTEAM_SECRET_KEY")
-    if not secret_key:
-        return jsonify({"error": "Red-teaming is not configured on this server."}), 501
+    username = request.headers.get("X-Username")
+    password = request.headers.get("X-Password")
 
-    provided_key = request.headers.get("X-Redteam-Key")
-    if provided_key != secret_key:
-        return jsonify({"error": "Unauthorized."}), 401
+    if not username or not password:
+        return jsonify({"error": "Missing 'X-Username' or 'X-Password' headers."}), 401
+
+    # Look up user by username
+    users_db = db.get_all_users()
+    user_id = None
+    for uid, u in users_db.items():
+        if u["username"].lower() == username.lower():
+            user_id = uid
+            break
+
+    if not user_id or users_db[user_id]["password"] != password:
+        return jsonify({"error": "Invalid username or password."}), 401
+
+    user = users_db[user_id]
+    if user["role"] == "Admin":
+        return jsonify({"error": "Red-teaming is only allowed for Appliers and Approvers."}), 403
 
     data = request.get_json(silent=True)
     if not data or "message" not in data:
         return jsonify({"error": "Missing 'message' in request body."}), 400
 
-    # Optional: allow Lakera to specify which user to target
-    user_id = data.get("user_id")
-    if not user_id:
-        # Default to the first Applier in the DB if none provided
-        appliers = [u for u in db.get_all_users().values() if u["role"] == "Applier"]
-        user_id = appliers[0]["user_id"] if appliers else None
-
-    if not user_id:
-        return jsonify({"error": "No valid user found to agentify."}), 500
-
     try:
-        # Create a transient agent for this request
+        # Create a transient agent for this specific user
         agent = LoanAgent(current_user_id=user_id)
         response_text = agent.chat(data["message"])
         return jsonify({"response": response_text})
