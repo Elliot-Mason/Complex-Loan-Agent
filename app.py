@@ -486,7 +486,22 @@ def redteam_chat():
         # Create a transient agent for this specific user
         agent = LoanAgent(current_user_id=user_id)
         response_text = agent.chat(data["message"])
-        return jsonify({"response": response_text})
+        
+        # Return an OpenAI-compatible response format
+        return jsonify({
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": response_text
+                    },
+                    "finish_reason": "stop",
+                    "index": 0
+                }
+            ],
+            "model": agent.model,
+            "object": "chat.completion"
+        })
     except Exception as e:
         return jsonify({"error": f"Agent error: {e}"}), 500
 
