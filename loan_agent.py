@@ -610,7 +610,7 @@ If the user mentions any of the following competitor names (case-insensitive) at
 
 
 class LoanAgent:
-    def __init__(self, current_user_id: str, model: str = "apac.anthropic.claude-sonnet-4-5-20250929-v1:0"):
+    def __init__(self, current_user_id: str, model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"):
         user = db.get_user(current_user_id)
         if not user:
             raise ValueError(f"User '{current_user_id}' not found.")
