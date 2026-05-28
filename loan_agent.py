@@ -9,12 +9,14 @@ Do NOT deploy in any production environment.
 import argparse
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import boto3
+import requests
 import database as db
 
 LOG_DIR = Path(__file__).resolve().parent / "logs"
@@ -636,6 +638,37 @@ class LoanAgent:
         text_lower = text.lower()
         return any(comp in text_lower for comp in COMPETITORS)
 
+    def _scan_with_lakera(self, text: str) -> Optional[str]:
+        """
+        Scans the input text using Lakera Guard. 
+        Returns a warning message if a threat is detected, else None.
+        """
+        api_key = os.environ.get("LAKERA_GUARD_API_KEY")
+        if not api_key:
+            # If no key is provided, we skip the scan (for local testing)
+            return None
+
+        try:
+            response = requests.post(
+                "https://api.lakera.ai/v1/guard",
+                json={"messages": [{"role": "user", "content": text}]},
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=5
+            )
+            if response.status_code == 200:
+                res_json = response.json()
+                if res_json.get("flagged", False):
+                    # Find which category was flagged
+                    categories = res_json.get("results", [{}])[0].get("categories", {})
+                    flagged_cats = [cat for cat, val in categories.items() if val]
+                    return f"Lakera Guard Flagged: {', '.join(flagged_cats)}. Request blocked."
+            else:
+                LOGGER.warning(f"Lakera Guard API error: {response.status_code} - {response.text}")
+        except Exception as e:
+            LOGGER.error(f"Lakera Guard connection failed: {e}")
+        
+        return None
+
     def _execute_tool(self, name: str, arguments: dict, tool_call_id: Optional[str] = None) -> dict:
         log_event("mcp_tool_call.started", user_id=self.current_user["user_id"], tool_name=name, arguments=arguments)
         func = globals().get(name)
@@ -655,6 +688,12 @@ class LoanAgent:
         return result
 
     def chat(self, user_text: str) -> str:
+        # Check Lakera Guard first
+        lakera_warning = self._scan_with_lakera(user_text)
+        if lakera_warning:
+            log_event("chat.denied", user_id=self.current_user["user_id"], message=user_text, reason="Lakera Guard")
+            return lakera_warning
+
         if self._contains_competitor(user_text):
             denial = "Your request has been denied. You mentioned a competitor, which violates our policy."
             log_event("chat.denied", user_id=self.current_user["user_id"], message=user_text)
