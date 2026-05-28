@@ -618,7 +618,7 @@ class LoanAgent:
         self.current_user = user
         self.model = model
         self.messages: List[Dict[str, Any]] = []
-        self.bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+        self.bedrock = boto3.client("bedrock-runtime", region_name="ap-southeast-2")
 
         self.tools = BEDROCK_TOOLS
         if self.current_user["role"] == "Applier":
