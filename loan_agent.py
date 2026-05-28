@@ -617,6 +617,7 @@ class LoanAgent:
 
         self.current_user = user
         self.model = model
+        print(f"--- DEBUG: INITIALIZING AGENT WITH MODEL: {self.model} ---")
         self.messages: List[Dict[str, Any]] = []
         self.bedrock = boto3.client("bedrock-runtime", region_name="ap-southeast-2")
 
