@@ -28,4 +28,4 @@ ENV REDTEAM_SECRET_KEY=""
 EXPOSE 8080
 
 # Run the application using Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app", "--workers", "2", "--timeout", "120"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app", "--workers", "1", "--timeout", "120"]
