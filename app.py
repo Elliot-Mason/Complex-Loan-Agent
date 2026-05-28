@@ -3,6 +3,7 @@ Flask web server wrapping the LoanAgent.
 """
 
 import logging
+import os
 import time
 import uuid
 from flask import Flask, g, jsonify, render_template, request, session
@@ -447,6 +448,43 @@ def admin_reset_database():
     db.reset_db()
     AGENTS.clear()
     return jsonify({"status": "success", "message": "Database reset to the original seed data."})
+
+
+@app.route("/api/redteam", methods=["POST"])
+def redteam_chat():
+    """
+    An API-key protected endpoint for automated red-teaming (e.g., Lakera Red).
+    Bypasses session cookies and uses an API key in the 'X-Redteam-Key' header.
+    """
+    secret_key = os.environ.get("REDTEAM_SECRET_KEY")
+    if not secret_key:
+        return jsonify({"error": "Red-teaming is not configured on this server."}), 501
+
+    provided_key = request.headers.get("X-Redteam-Key")
+    if provided_key != secret_key:
+        return jsonify({"error": "Unauthorized."}), 401
+
+    data = request.get_json(silent=True)
+    if not data or "message" not in data:
+        return jsonify({"error": "Missing 'message' in request body."}), 400
+
+    # Optional: allow Lakera to specify which user to target
+    user_id = data.get("user_id")
+    if not user_id:
+        # Default to the first Applier in the DB if none provided
+        appliers = [u for u in db.get_all_users().values() if u["role"] == "Applier"]
+        user_id = appliers[0]["user_id"] if appliers else None
+
+    if not user_id:
+        return jsonify({"error": "No valid user found to agentify."}), 500
+
+    try:
+        # Create a transient agent for this request
+        agent = LoanAgent(current_user_id=user_id)
+        response_text = agent.chat(data["message"])
+        return jsonify({"response": response_text})
+    except Exception as e:
+        return jsonify({"error": f"Agent error: {e}"}), 500
 
 
 # ---------------------------------------------------------------------------

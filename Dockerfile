@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
+# Environment variable for Lakera Guard (to be passed during build or run)
+ENV LAKERA_GUARD_API_KEY=""
+ENV REDTEAM_SECRET_KEY=""
+
 # Expose the port the app runs on (App Runner default)
 EXPOSE 8080
 
