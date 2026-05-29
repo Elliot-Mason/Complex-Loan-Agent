@@ -177,6 +177,11 @@ def logout():
     return jsonify({"status": "success", "message": "Logged out."})
 
 
+@app.route("/health")
+def health_check():
+    return jsonify({"status": "healthy", "timestamp": now_iso()}), 200
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     sid = session.get("sid") or request.headers.get("X-Session-ID") or "default_session"
@@ -205,73 +210,6 @@ def chat():
         agent = LoanAgent(current_user_id=user_id, session_id=sid)
         response_text = agent.chat(user_text)
         return jsonify({"response": response_text, "chat_id": sid})
-    except Exception as e:
-        return jsonify({"error": f"Agent error: {e}"}), 500
-
-
-@app.route("/api/redteam", methods=["POST"])
-def redteam_chat():
-    username = request.headers.get("X-Username")
-    password = request.headers.get("X-Password")
-    
-    print(f"--- DEBUG: Incoming request to /api/redteam from {username} ---")
-
-    if not username or not password:
-        return jsonify({"error": "Missing 'X-Username' or 'X-Password' headers."}), 401
-
-    users_db = db.get_all_users()
-    user_id = None
-    for uid, u in users_db.items():
-        if u["username"].lower() == username.lower():
-            user_id = uid
-            break
-
-    if not user_id or users_db[user_id]["password"] != password:
-        return jsonify({"error": "Invalid username or password."}), 401
-
-    data = request.get_json(silent=True) or {}
-    session_id = request.headers.get("X-Session-ID") or f"redteam_{user_id}"
-
-    messages_input = data.get("messages", [])
-    user_text = data.get("message")
-    
-    if isinstance(messages_input, list) and len(messages_input) > 0:
-        for msg in reversed(messages_input):
-            if msg.get("role") == "user":
-                user_text = msg.get("content", "")
-                break
-
-    if not user_text:
-        return jsonify({"error": "Missing 'message' in request body."}), 400
-
-    try:
-        # Use database-backed persistent agent
-        agent = LoanAgent(current_user_id=user_id, session_id=session_id)
-        
-        # If Lakera provides history, sync the agent's messages
-        if isinstance(messages_input, list) and len(messages_input) > 1:
-            agent.messages = []
-            for m in messages_input[:-1]:
-                agent.messages.append({
-                    "role": m["role"],
-                    "content": [{"text": m["content"]}]
-                })
-
-        response_text = agent.chat(user_text)
-
-        return jsonify({
-            "choices": [
-                {
-                    "message": {"role": "assistant", "content": response_text},
-                    "finish_reason": "stop",
-                    "index": 0
-                }
-            ],
-            "model": agent.model,
-            "object": "chat.completion",
-            "chat_id": session_id,
-            "response": response_text  # compatibility key
-        })
     except Exception as e:
         return jsonify({"error": f"Agent error: {e}"}), 500
 
