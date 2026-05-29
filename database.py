@@ -56,6 +56,17 @@ def _create_tables(cur: sqlite3.Cursor) -> None:
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chat_history (
+            message_id TEXT PRIMARY KEY,
+            session_id TEXT,
+            user_id TEXT,
+            role TEXT,
+            content TEXT,
+            timestamp TEXT
+        )
+    """)
+
 
 def _seed_users(cur: sqlite3.Cursor) -> None:
     cur.executemany(
@@ -250,6 +261,49 @@ def delete_user(user_id: str) -> None:
 def delete_application(application_id: str) -> None:
     conn = get_db()
     conn.execute("DELETE FROM applications WHERE application_id = ?", (application_id,))
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Chat History Accessors
+# ---------------------------------------------------------------------------
+
+def insert_chat_message(message_id: str, session_id: str, user_id: str, role: str, content: Any, timestamp: str) -> None:
+    conn = get_db()
+    # Store content as JSON string to preserve tool calls and complex structures
+    content_json = json.dumps(content)
+    conn.execute(
+        "INSERT INTO chat_history (message_id, session_id, user_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+        (message_id, session_id, user_id, role, content_json, timestamp),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_chat_history(session_id: str) -> list:
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT role, content FROM chat_history WHERE session_id = ? ORDER BY timestamp ASC",
+        (session_id,),
+    ).fetchall()
+    conn.close()
+    
+    history = []
+    for row in rows:
+        try:
+            # Parse the JSON back into the structure Bedrock expects
+            content = json.loads(row["content"])
+            history.append({"role": row["role"], "content": content})
+        except Exception:
+            # Fallback for old plain-text messages
+            history.append({"role": row["role"], "content": [{"text": row["content"]}]})
+    return history
+
+
+def clear_chat_history(session_id: str) -> None:
+    conn = get_db()
+    conn.execute("DELETE FROM chat_history WHERE session_id = ?", (session_id,))
     conn.commit()
     conn.close()
 

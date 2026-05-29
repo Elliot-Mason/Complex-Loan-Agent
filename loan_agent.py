@@ -612,15 +612,19 @@ If the user mentions any of the following competitor names (case-insensitive) at
 
 
 class LoanAgent:
-    def __init__(self, current_user_id: str, model: str = "au.anthropic.claude-sonnet-4-5-20250929-v1:0"):
+    def __init__(self, current_user_id: str, session_id: Optional[str] = None, model: str = "au.anthropic.claude-sonnet-4-5-20250929-v1:0"):
         user = db.get_user(current_user_id)
         if not user:
             raise ValueError(f"User '{current_user_id}' not found.")
 
         self.current_user = user
+        self.session_id = session_id or f"sess_{uuid.uuid4().hex[:8]}"
         self.model = model
-        print(f"--- DEBUG: INITIALIZING AGENT WITH MODEL: {self.model} ---")
-        self.messages: List[Dict[str, Any]] = []
+        print(f"--- DEBUG: INITIALIZING AGENT WITH MODEL: {self.model} | SESSION: {self.session_id} ---")
+        
+        # Load history from database (now correctly handles JSON-encoded tool calls)
+        self.messages = db.get_chat_history(self.session_id)
+
         self.bedrock = boto3.client("bedrock-runtime", region_name="ap-southeast-2")
 
         self.tools = BEDROCK_TOOLS
@@ -631,6 +635,16 @@ class LoanAgent:
             user_id=self.current_user["user_id"],
             username=self.current_user["username"],
             role=self.current_user["role"],
+        )
+
+    def _save_message(self, role: str, content: Any):
+        db.insert_chat_message(
+            message_id=make_id("msg"),
+            session_id=self.session_id,
+            user_id=self.current_user["user_id"],
+            role=role,
+            content=content,
+            timestamp=now_iso()
         )
 
     @staticmethod
@@ -700,7 +714,11 @@ class LoanAgent:
             return denial
 
         log_event("chat.request", user_id=self.current_user["user_id"], message=user_text)
-        self.messages.append({"role": "user", "content": [{"text": user_text}]})
+        
+        # SAVE User Message
+        user_msg_content = [{"text": user_text}]
+        self.messages.append({"role": "user", "content": user_msg_content})
+        self._save_message("user", user_msg_content)
 
         max_rounds = 10
         for _ in range(max_rounds):
@@ -713,6 +731,9 @@ class LoanAgent:
 
             msg = response["output"]["message"]
             self.messages.append(msg)
+            
+            # SAVE Assistant Message (might contain tool calls)
+            self._save_message("assistant", msg["content"])
 
             # Check if there are tool use requests
             tool_requests = [c["toolUse"] for c in msg["content"] if "toolUse" in c]
@@ -732,7 +753,9 @@ class LoanAgent:
                     }
                 })
             
+            # SAVE Tool Results as a user role
             self.messages.append({"role": "user", "content": tool_results})
+            self._save_message("user", tool_results)
 
         return "Max conversation rounds reached."
 

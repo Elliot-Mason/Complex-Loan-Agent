@@ -15,6 +15,7 @@ app = Flask(__name__)
 app.secret_key = "super-secret-key-change-in-production"
 
 AGENTS: dict = {}
+REDTEAM_AGENTS: dict = {}
 API_LOGGER = logging.getLogger("complex_loan_agent.api")
 SENSITIVE_LOG_FIELDS = {"password"}
 
@@ -178,21 +179,101 @@ def logout():
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    sid = session.get("sid")
-    if not sid or sid not in AGENTS:
+    sid = session.get("sid") or request.headers.get("X-Session-ID") or "default_session"
+    user_id = session.get("user_id") or request.headers.get("X-User-ID")
+    
+    # Red-team fallback for standard chat endpoint
+    if not user_id:
+        username = request.headers.get("X-Username")
+        if username:
+            users_db = db.get_all_users()
+            for uid, u in users_db.items():
+                if u["username"].lower() == username.lower():
+                    user_id = uid
+                    break
+
+    if not user_id:
         return jsonify({"error": "Not logged in."}), 401
 
-    data = request.get_json(silent=True)
-    if not data or "message" not in data:
-        return jsonify({"error": "Missing 'message' in request body."}), 400
+    data = request.get_json(silent=True) or {}
+    user_text = data.get("message")
+    
+    print(f"--- DEBUG: Incoming request to /api/chat from {user_id} | Session: {sid} ---")
 
-    agent = AGENTS[sid]
     try:
-        response_text = agent.chat(data["message"])
+        # Use database-backed persistent agent
+        agent = LoanAgent(current_user_id=user_id, session_id=sid)
+        response_text = agent.chat(user_text)
+        return jsonify({"response": response_text, "chat_id": sid})
     except Exception as e:
         return jsonify({"error": f"Agent error: {e}"}), 500
 
-    return jsonify({"response": response_text})
+
+@app.route("/api/redteam", methods=["POST"])
+def redteam_chat():
+    username = request.headers.get("X-Username")
+    password = request.headers.get("X-Password")
+    
+    print(f"--- DEBUG: Incoming request to /api/redteam from {username} ---")
+
+    if not username or not password:
+        return jsonify({"error": "Missing 'X-Username' or 'X-Password' headers."}), 401
+
+    users_db = db.get_all_users()
+    user_id = None
+    for uid, u in users_db.items():
+        if u["username"].lower() == username.lower():
+            user_id = uid
+            break
+
+    if not user_id or users_db[user_id]["password"] != password:
+        return jsonify({"error": "Invalid username or password."}), 401
+
+    data = request.get_json(silent=True) or {}
+    session_id = request.headers.get("X-Session-ID") or f"redteam_{user_id}"
+
+    messages_input = data.get("messages", [])
+    user_text = data.get("message")
+    
+    if isinstance(messages_input, list) and len(messages_input) > 0:
+        for msg in reversed(messages_input):
+            if msg.get("role") == "user":
+                user_text = msg.get("content", "")
+                break
+
+    if not user_text:
+        return jsonify({"error": "Missing 'message' in request body."}), 400
+
+    try:
+        # Use database-backed persistent agent
+        agent = LoanAgent(current_user_id=user_id, session_id=session_id)
+        
+        # If Lakera provides history, sync the agent's messages
+        if isinstance(messages_input, list) and len(messages_input) > 1:
+            agent.messages = []
+            for m in messages_input[:-1]:
+                agent.messages.append({
+                    "role": m["role"],
+                    "content": [{"text": m["content"]}]
+                })
+
+        response_text = agent.chat(user_text)
+
+        return jsonify({
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": response_text},
+                    "finish_reason": "stop",
+                    "index": 0
+                }
+            ],
+            "model": agent.model,
+            "object": "chat.completion",
+            "chat_id": session_id,
+            "response": response_text  # compatibility key
+        })
+    except Exception as e:
+        return jsonify({"error": f"Agent error: {e}"}), 500
 
 
 @app.route("/api/user", methods=["GET"])
@@ -447,6 +528,7 @@ def admin_reset_database():
 
     db.reset_db()
     AGENTS.clear()
+    REDTEAM_AGENTS.clear()
     return jsonify({"status": "success", "message": "Database reset to the original seed data."})
 
 
@@ -455,7 +537,7 @@ def redteam_chat():
     """
     An API-protected endpoint for automated red-teaming (e.g., Lakera Red).
     Authenticates using 'X-Username' and 'X-Password' headers.
-    Bypasses session cookies for easier automation.
+    Automatically maintains a single, continuous chat history for the user.
     """
     username = request.headers.get("X-Username")
     password = request.headers.get("X-Password")
@@ -478,15 +560,46 @@ def redteam_chat():
     if user["role"] == "Admin":
         return jsonify({"error": "Red-teaming is only allowed for Appliers and Approvers."}), 403
 
-    data = request.get_json(silent=True)
-    if not data or "message" not in data:
-        return jsonify({"error": "Missing 'message' in request body."}), 400
+    data = request.get_json(silent=True) or {}
+
+    # Session Management:
+    # 1. Check for explicit session header
+    # 2. Fallback to a stable, permanent Chat ID for this user.
+    session_id = request.headers.get("X-Session-ID") or f"persistent_redteam_session_{user_id}"
+
+    # Support both "message" (custom) and OpenAI-compatible "messages"
+    messages_input = data.get("messages", [])
+    user_text = data.get("message")
+    
+    if isinstance(messages_input, list) and len(messages_input) > 0:
+        for msg in reversed(messages_input):
+            if msg.get("role") == "user":
+                user_text = msg.get("content", "")
+                break
+
+    if not user_text:
+        return jsonify({"error": "Missing 'message' or 'messages' in request body."}), 400
 
     try:
-        # Create a transient agent for this specific user
-        agent = LoanAgent(current_user_id=user_id)
-        response_text = agent.chat(data["message"])
+        # IN-MEMORY PERSISTENCE: 
+        # We reuse the SAME LoanAgent object from memory. 
+        # This is the most reliable way to maintain context for high-frequency tools.
+        if session_id not in REDTEAM_AGENTS:
+            REDTEAM_AGENTS[session_id] = LoanAgent(current_user_id=user_id, session_id=session_id)
         
+        agent = REDTEAM_AGENTS[session_id]
+        
+        # If the client provides history, synchronize the in-memory agent
+        if isinstance(messages_input, list) and len(messages_input) > 1:
+            agent.messages = []
+            for m in messages_input[:-1]:
+                agent.messages.append({
+                    "role": m["role"],
+                    "content": [{"text": m["content"]}]
+                })
+
+        response_text = agent.chat(user_text)
+
         # Return an OpenAI-compatible response format
         return jsonify({
             "choices": [
@@ -500,7 +613,8 @@ def redteam_chat():
                 }
             ],
             "model": agent.model,
-            "object": "chat.completion"
+            "object": "chat.completion",
+            "chat_id": session_id
         })
     except Exception as e:
         return jsonify({"error": f"Agent error: {e}"}), 500
