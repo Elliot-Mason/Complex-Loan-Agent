@@ -4,6 +4,7 @@ FOR TRAINING / PENETRATION TESTING LAB USE ONLY.
 Contains an intentional SQL injection vulnerability in get_user_profile_raw().
 """
 
+import json
 import sqlite3
 from typing import Any, Dict, Optional
 
