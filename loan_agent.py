@@ -662,6 +662,24 @@ class LoanAgent:
         text_lower = text.lower()
         return any(comp in text_lower for comp in COMPETITORS)
 
+    def _execute_tool(self, name: str, arguments: dict, tool_call_id: Optional[str] = None) -> dict:
+        log_event("mcp_tool_call.started", user_id=self.current_user["user_id"], tool_name=name, arguments=arguments)
+        func = globals().get(name)
+        if not callable(func):
+            return {"status": "error", "message": f"Unknown tool: {name}"}
+
+        try:
+            if name in ["submit_application", "approve_application", "check_loan_status", "update_user_profile"]:
+                result = func(self.current_user, **arguments)
+            else:
+                result = func(**arguments)
+        except Exception as exc:
+            LOGGER.exception(f"Tool {name} failed: {exc}")
+            result = {"status": "error", "message": str(exc)}
+
+        log_event("mcp_tool_call.completed", user_id=self.current_user["user_id"], tool_name=name, result=result)
+        return result
+
     def chat(self, user_text: str) -> str:
         if self._contains_competitor(user_text):
             denial = "Your request has been denied. You mentioned a competitor, which violates our policy."
