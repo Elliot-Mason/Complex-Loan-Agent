@@ -24,6 +24,9 @@ COPY . .
 ENV LAKERA_GUARD_API_KEY=""
 ENV REDTEAM_SECRET_KEY=""
 
+# Disable local file logging by default for containerized environments (use CloudWatch instead)
+ENV DISABLE_FILE_LOGGING="true"
+
 # Expose the port the app runs on (App Runner default)
 EXPOSE 8080
 

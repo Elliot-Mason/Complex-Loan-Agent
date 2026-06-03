@@ -529,12 +529,47 @@ def redteam_chat():
         
         # If the client provides history, synchronize the in-memory agent
         if isinstance(messages_input, list) and len(messages_input) > 1:
-            agent.messages = []
+            synchronized_messages = []
             for m in messages_input[:-1]:
-                agent.messages.append({
-                    "role": m["role"],
-                    "content": [{"text": m["content"]}]
-                })
+                role = m.get("role")
+                # Bedrock converse API only supports 'user' and 'assistant' roles
+                if role not in ["user", "assistant"]:
+                    if role == "system":
+                        continue  # System prompt is handled by the agent
+                    # Map OpenAI 'tool' role or others to 'user' for Bedrock
+                    role = "user"
+
+                content_raw = m.get("content")
+                content_blocks = []
+
+                if isinstance(content_raw, str) and content_raw.strip():
+                    content_blocks.append({"text": content_raw})
+                elif isinstance(content_raw, list):
+                    # If it's already a list of blocks, pass them through
+                    for block in content_raw:
+                        if isinstance(block, dict) and (block.get("text") or "toolUse" in block or "toolResult" in block):
+                            content_blocks.append(block)
+                
+                # If no text was found, but it's an assistant message, it might be a tool call
+                # In OpenAI format, tool_calls is a separate field
+                if not content_blocks and role == "assistant" and "tool_calls" in m:
+                    # We don't fully support reconstructing tool calls from OpenAI format yet,
+                    # but we must provide AT LEAST one content block to Bedrock.
+                    content_blocks.append({"text": "[Assistant Tool Call]"})
+
+                if content_blocks:
+                    # Ensure alternating roles (User -> Assistant -> User ...)
+                    if synchronized_messages and synchronized_messages[-1]["role"] == role:
+                        # Merge content if consecutive roles are the same
+                        synchronized_messages[-1]["content"].extend(content_blocks)
+                    else:
+                        synchronized_messages.append({
+                            "role": role,
+                            "content": content_blocks
+                        })
+            
+            if synchronized_messages:
+                agent.messages = synchronized_messages
 
         response_text = agent.chat(user_text)
 
@@ -555,6 +590,7 @@ def redteam_chat():
             "chat_id": session_id
         })
     except Exception as e:
+        API_LOGGER.exception(f"Redteam Agent error: {e}")
         return jsonify({"error": f"Agent error: {e}"}), 500
 
 

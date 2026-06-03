@@ -12,6 +12,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -33,13 +34,22 @@ def _configure_logger() -> logging.Logger:
 
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
+    # Always log to stdout (best for Fargate/CloudWatch)
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
-    file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    # Optional file logging with rotation to prevent disk exhaustion
+    if os.environ.get("DISABLE_FILE_LOGGING", "").lower() != "true":
+        # Max 10MB per file, keep 5 backups
+        file_handler = RotatingFileHandler(
+            LOG_FILE, 
+            encoding="utf-8", 
+            maxBytes=10 * 1024 * 1024, 
+            backupCount=5
+        )
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
     logger.propagate = False
     return logger
