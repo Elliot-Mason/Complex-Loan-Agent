@@ -624,7 +624,7 @@ If the user mentions any of the following competitor names (case-insensitive) at
 
 
 class LoanAgent:
-    def __init__(self, current_user_id: str, session_id: Optional[str] = None, model: str = "au.anthropic.claude-sonnet-4-5-20250929-v1:0"):
+    def __init__(self, current_user_id: str, session_id: Optional[str] = None, model: str = "qwen.qwen3-32b-v1:0"):
         user = db.get_user(current_user_id)
         if not user:
             raise ValueError(f"User '{current_user_id}' not found.")
@@ -641,7 +641,7 @@ class LoanAgent:
         bedrock_config = Config(
             connect_timeout=10,
             read_timeout=300,
-            retries={"max_attempts": 0}
+            retries={"max_attempts": 5, "mode": "standard"}
         )
         self.bedrock = boto3.client("bedrock-runtime", region_name="ap-southeast-2", config=bedrock_config)
 
