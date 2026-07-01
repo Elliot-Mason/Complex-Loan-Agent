@@ -22,6 +22,15 @@ from botocore.config import Config
 import requests
 import database as db
 
+# Load .env file
+_env_path = Path(__file__).resolve().parent / ".env"
+if _env_path.exists():
+    for line in _env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip())
+
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_FILE = LOG_DIR / "complex_loan_agent.log"
 
@@ -624,14 +633,14 @@ If the user mentions any of the following competitor names (case-insensitive) at
 
 
 class LoanAgent:
-    def __init__(self, current_user_id: str, session_id: Optional[str] = None, model: str = "qwen.qwen3-32b-v1:0"):
+    def __init__(self, current_user_id: str, session_id: Optional[str] = None, model: Optional[str] = None):
         user = db.get_user(current_user_id)
         if not user:
             raise ValueError(f"User '{current_user_id}' not found.")
 
         self.current_user = user
         self.session_id = session_id or f"sess_{uuid.uuid4().hex[:8]}"
-        self.model = model
+        self.model = model or os.environ.get("BEDROCK_MODEL_ID", "qwen.qwen3-32b-v1:0")
         print(f"--- DEBUG: INITIALIZING AGENT WITH MODEL: {self.model} | SESSION: {self.session_id} ---")
         
         # Load history from database
@@ -643,7 +652,8 @@ class LoanAgent:
             read_timeout=300,
             retries={"max_attempts": 5, "mode": "standard"}
         )
-        self.bedrock = boto3.client("bedrock-runtime", region_name="ap-southeast-2", config=bedrock_config)
+        region_name = os.environ.get("AWS_REGION", "ap-southeast-2")
+        self.bedrock = boto3.client("bedrock-runtime", region_name=region_name, config=bedrock_config)
 
         self.tools = BEDROCK_TOOLS
         if self.current_user["role"] == "Applier":
